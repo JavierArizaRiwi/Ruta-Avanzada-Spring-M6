@@ -1,182 +1,273 @@
-# Historias de Usuario -- Semana 1 (Spring + IntelliJ IDEA)
+# Día 1 — De Java SE a Spring: IoC, DI, Beans, Estereotipos y Ciclo de Vida
 
-## Sesión Día 1 -- Fundamentos y Configuración de Proyecto Spring
+> Objetivo: entender **qué es Spring** y por qué su **contenedor IoC** cambia la forma de estructurar proyectos. Conecta POO, patrones (Factory, Strategy, DAO/Repository) y arquitectura por capas con **Inversión de Control (IoC)** e **Inyección de Dependencias (DI)**, y conoce a fondo los **estereotipos** y el **ciclo de vida de los beans** dentro de un proyecto en IntelliJ IDEA.
 
-Este documento guía a personas que nunca han trabajado con **Spring**.
-Instalarás las herramientas, crearás un proyecto **Spring Boot** en
-**IntelliJ IDEA**, aprenderás atajos para **buscar clases/métodos**, y
-expondrás tu primer endpoint.
+---
 
-------------------------------------------------------------------------
+## 1) Punto de partida: ¿cómo lo hacíamos en Java SE?
 
-## Objetivos del día
-
-1.  Instalar Java 17 y Maven.\
-2.  Instalar IntelliJ IDEA Community.\
-3.  Crear un proyecto **Spring Boot** (Spring Initializr).\
-4.  Entender la estructura por paquetes (controller, service,
-    repository, domain).\
-5.  Ejecutar la app y probar un endpoint REST.\
-6.  Usar **H2** en memoria para persistencia básica.\
-7.  Dominar **búsquedas y navegación** en IntelliJ (clases, métodos,
-    símbolos, usos).\
-8.  Configurar Git/GitHub y flujos de ramas.\
-9.  Documentar el proceso.
-
-------------------------------------------------------------------------
-
-## Paso 1 -- Instalar Java 17 y Maven
-
-``` bash
-sudo apt update
-sudo apt install -y openjdk-17-jdk
-java -version
-sudo apt install -y maven
-mvn -v
+### 1.1 Arquitectura por capas clásica
 ```
-
-------------------------------------------------------------------------
-
-## Paso 2 -- Instalar IntelliJ IDEA Community
-
-``` bash
-sudo snap install intellij-idea-community --classic
+UI/Controller  →  Service  →  DAO/Repository  →  JDBC/MySQL
+         validación   reglas      SQL/Mapeo        conexiones
 ```
+- Dependencias creadas con `new` dentro de servicios o controladores.  
+- Configuración dispersa (URLs, credenciales) y acoplamiento a implementación concreta.  
+- Dificultad para testear en aislamiento.
 
-------------------------------------------------------------------------
+### 1.2 Dolencias que aparecían
+- Duplicación de creación de objetos.  
+- Cambiar de JDBC a JPA = refactor doloroso.  
+- Mocks complicados, pruebas frágiles.
 
-## Paso 3 -- Crear el proyecto Spring Boot
+---
 
-**En IntelliJ:**\
-*File → New Project → Spring Initializr*
+## 2) Inversión de Control (IoC) y el contenedor de Spring
 
--   **Group:** com.codeup\
--   **Artifact:** academico-spring\
--   **Dependencies:** Spring Web, Spring Boot DevTools, Lombok,
-    Validation, Spring Data JPA, H2 Database
+**Definición:** delegar en un contenedor la **creación**, **configuración** y **ciclo de vida** de los objetos (beans).  
+**Valor:** el código “declara” dependencias; el contenedor las **inyecta**.
 
-Estructura esperada:
+### 2.1 Bean y contexto
+- **Bean:** objeto gestionado por Spring.  
+- **ApplicationContext:** fábrica avanzada de beans + servicios infra (i18n, eventos, perfiles).
 
-    academico-spring
-     ├─ src/main/java/com/codeup/academico
-     │   ├─ AcademicoSpringApplication.java
-     │   ├─ domain/
-     │   ├─ repository/
-     │   ├─ service/
-     │   └─ web/
-     ├─ src/main/resources/
-     ├─ pom.xml
+### 2.2 Ciclo de vida de un bean (visión)
+1. Definición (`@Component`, `@Service`, `@Repository` o `@Bean`).  
+2. Instanciación del objeto.  
+3. Inyección de dependencias.  
+4. Ejecución de post‑procesadores (AOP, validaciones, proxies).  
+5. Inicialización (`@PostConstruct` si aplica).  
+6. Uso activo del bean.  
+7. Destrucción (`@PreDestroy`).
 
-------------------------------------------------------------------------
+---
 
-## Paso 4 -- Primer endpoint REST
+## 3) Inyección de Dependencias (DI): formas y buenas prácticas
 
-### domain/Estudiante.java
+### 3.1 Tipos
+- **Constructor Injection** (preferida): dependencias obligatorias → inmutables (`final`).  
+- **Setter Injection:** dependencias opcionales.  
+- **Field Injection:** evitar (dificulta test y claridad).
 
-``` java
-@Entity @Table(name = "estudiantes")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Estudiante {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    @Column(nullable = false)
-    private String nombre;
+### 3.2 Ejemplo comparativo
+
+**Java SE (acoplado):**
+```java
+class EstudianteService {
+  private final EstudianteRepository repo = new EstudianteRepositoryJdbc(); // acoplamiento
 }
 ```
 
-### repository/EstudianteRepository.java
-
-``` java
-public interface EstudianteRepository extends JpaRepository<Estudiante, Long> {
-    boolean existsByNombre(String nombre);
-}
-```
-
-### service/EstudianteService.java
-
-``` java
-public interface EstudianteService {
-    Estudiante crear(String nombre);
-    List<Estudiante> listar();
-    Estudiante buscarPorId(Long id);
-}
-```
-
-### service/EstudianteServiceImpl.java
-
-``` java
+**Spring (DI por constructor):**
+```java
 @Service
-@Transactional
-public class EstudianteServiceImpl implements EstudianteService {
-    private final EstudianteRepository repo;
-    public EstudianteServiceImpl(EstudianteRepository repo) { this.repo = repo; }
-
-    @Override
-    public Estudiante crear(String nombre) {
-        if (nombre == null || nombre.isBlank())
-            throw new IllegalArgumentException("nombre requerido");
-        if (repo.existsByNombre(nombre))
-            throw new IllegalArgumentException("ya existe un estudiante con ese nombre");
-        return repo.save(Estudiante.builder().nombre(nombre).build());
-    }
-
-    @Override
-    public List<Estudiante> listar() { return repo.findAll(); }
-
-    @Override
-    public Estudiante buscarPorId(Long id) {
-        return repo.findById(id)
-                   .orElseThrow(() -> new IllegalArgumentException("estudiante no encontrado"));
-    }
+public class EstudianteService {
+  private final EstudianteRepository repo;
+  public EstudianteService(EstudianteRepository repo) { this.repo = repo; }
 }
 ```
 
-### web/EstudianteController.java
+**JavaConfig explícito (equivale a Factory controlada):**
+```java
+@Configuration
+public class AppConfig {
+  @Bean EstudianteRepository estudianteRepository() { return new EstudianteRepositoryJdbc(); }
+  @Bean EstudianteService estudianteService(EstudianteRepository repo) { return new EstudianteService(repo); }
+}
+```
 
-``` java
+---
+
+## 4) Conexión con POO y patrones de diseño
+
+| Concepto | Cómo se traduce en Spring |
+|---|---|
+| **Factory / Abstract Factory** | Métodos `@Bean` crean instancias bajo control del contenedor |
+| **Strategy** | Inyectar múltiples implementaciones (mapa de estrategias) sin `if/switch` |
+| **DAO/Repository** | Contratos (interfaces) desacoplados de la tecnología (JDBC/JPA) |
+| **Singleton** | Scope por defecto de los beans (gestionado correctamente por Spring) |
+
+---
+
+## 5) Estereotipos: cómo se categorizan los beans
+
+Los **estereotipos** son anotaciones que indican a Spring *qué tipo de responsabilidad tiene una clase* y habilitan el **descubrimiento automático** (Component Scan).
+
+| Estereotipo | Uso típico | Capa | Valor agregado |
+|--------------|------------|------|----------------|
+| `@Component` | Componente genérico reutilizable | Infraestructura o dominio | Marca para escaneo general |
+| `@Service` | Lógica de negocio, casos de uso | Application | Semántica: "servicio" |
+| `@Repository` | Acceso a datos (DAO/JPA/JDBC) | Infraestructura | Traduce excepciones SQL a `DataAccessException` |
+| `@Controller` | Controladores web (MVC) | Presentación | Devuelve vistas (Thymeleaf, JSP) |
+| `@RestController` | API REST | Presentación (Web/API) | `@Controller` + `@ResponseBody` |
+
+### Ejemplo práctico
+```java
+@Repository
+public class EstudianteRepositoryJdbc implements EstudianteRepository {
+    // Acceso a la base de datos con JDBC
+}
+
+@Service
+public class EstudianteService {
+    private final EstudianteRepository repo;
+    public EstudianteService(EstudianteRepository repo) { this.repo = repo; }
+}
+
 @RestController
 @RequestMapping("/api/estudiantes")
 public class EstudianteController {
     private final EstudianteService service;
     public EstudianteController(EstudianteService service) { this.service = service; }
 
-    @PostMapping
-    public ResponseEntity<Estudiante> crear(@RequestParam String nombre) {
-        return ResponseEntity.ok(service.crear(nombre));
-    }
-
     @GetMapping
-    public ResponseEntity<List<Estudiante>> listar() {
-        return ResponseEntity.ok(service.listar());
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<Estudiante> porId(@PathVariable Long id) {
-        return ResponseEntity.ok(service.buscarPorId(id));
-    }
+    public List<Estudiante> listar() { return service.listar(); }
 }
 ```
 
-### application.properties
+---
 
-``` properties
-spring.h2.console.enabled=true
-spring.h2.console.path=/h2
-spring.datasource.url=jdbc:h2:mem:acad;DB_CLOSE_DELAY=-1;MODE=MySQL
-spring.jpa.hibernate.ddl-auto=update
+## 6) Component Scan y organización del proyecto
+
+```java
+@SpringBootApplication
+@ComponentScan(basePackages = "com.riwi.academico")
+public class AcademicoApp {
+  public static void main(String[] args) {
+    SpringApplication.run(AcademicoApp.class, args);
+  }
+}
 ```
 
-------------------------------------------------------------------------
+Spring explorará todos los subpaquetes de `com.riwi.academico` y registrará los beans anotados.
 
-## Paso 5 -- Ejecutar la aplicación
-
-``` bash
-mvn spring-boot:run
+**Estructura recomendada:**
+```
+com.riwi.academico
+ ├─ domain/           # Entidades y reglas (POO)
+ ├─ application/      # Casos de uso y servicios
+ ├─ infrastructure/   # Adaptadores, persistencia, APIs externas
+ ├─ web/              # Controladores REST o MVC
+ └─ config/           # Beans, perfiles y seguridad
 ```
 
-Prueba:
+---
 
-``` bash
-curl -X POST "http://localhost:8080/api/estudiantes?nombre=Laura"
-curl "http://localhost:8080/api/estudiantes"
+## 7) Alcance (Scope) de los Beans
+
+| Scope | Descripción | Contexto |
+|--------|-------------|----------|
+| `singleton` | Uno por contenedor (default) | General |
+| `prototype` | Nueva instancia por inyección | General |
+| `request` | Nueva instancia por solicitud HTTP | Web |
+| `session` | Una por sesión HTTP | Web |
+
+Ejemplo:
+```java
+@Scope("prototype")
+@Component
+public class ReporteTemporal { ... }
 ```
+
+---
+
+## 8) Ciclo de vida y hooks (`@PostConstruct` / `@PreDestroy`)
+
+```java
+@Component
+public class ConectorDB {
+
+  @PostConstruct
+  void init() {
+    System.out.println("Conexión inicializada...");
+  }
+
+  @PreDestroy
+  void close() {
+    System.out.println("Conexión cerrada...");
+  }
+}
+```
+**En IntelliJ IDEA:** al ejecutar la app desde la configuración de Spring Boot, verás los mensajes en la consola.
+
+---
+
+## 9) IntelliJ IDEA: configuración del proyecto paso a paso
+
+1. **Crea el proyecto:**  
+   - File → New → Project → *Spring Initializr* (si usarás Boot) o *Spring* (si es puro).
+   - Selecciona dependencias: *Spring Context*, *Spring Web*, *Spring JDBC*, *Spring Data JPA*.
+   - GroupId: `com.riwi`; ArtifactId: `academico`.
+
+2. **Estructura de paquetes:**  
+   IntelliJ te creará el paquete raíz según el GroupId. Añade subpaquetes `domain`, `application`, `infrastructure`, `web`, `config`.
+
+3. **Configura el `application.yml`:**
+   - Ubicación: `src/main/resources/application.yml`
+   - Ejemplo:
+     ```yaml
+     spring:
+       datasource:
+         url: jdbc:h2:mem:acad
+         username: sa
+         driver-class-name: org.h2.Driver
+       jpa:
+         hibernate:
+           ddl-auto: update
+     ```
+
+4. **Ejecuta desde IntelliJ:**  
+   - Abre el archivo principal (`AcademicoApp.java`).  
+   - Clic derecho → *Run AcademicoApp* o usa Shift + F10.  
+   - Verás en consola los logs de creación de beans (`Creating shared instance of bean...`).
+
+5. **Ver los beans registrados:**  
+   Usa en consola de IntelliJ:
+   ```bash
+   mvn spring-boot:run
+   ```
+   Y revisa los logs del ApplicationContext o añade un comando dentro de tu clase principal:
+   ```java
+   @Bean
+   CommandLineRunner runner(ApplicationContext ctx) {
+     return args -> {
+       System.out.println("Beans cargados:");
+       Arrays.stream(ctx.getBeanDefinitionNames()).forEach(System.out::println);
+     };
+   }
+   ```
+
+---
+
+## 10) Diagnóstico y resolución de problemas comunes
+
+| Síntoma | Causa posible | Solución |
+|---|---|---|
+| `NoSuchBeanDefinitionException` | Bean no escaneado o conflicto de tipos | Verifica `@ComponentScan`, `@Qualifier` |
+| Ciclo de dependencias | A ↔ B con dependencia mutua | Introduce interfaz/puerto o refactoriza responsabilidades |
+| `NullPointer` en bean | Inyección por campo sin proxying o no inicializado | Usa **constructor injection** |
+| Rendimiento al iniciar | Escaneo excesivo | Restringe paquetes y evita beans innecesarios |
+
+---
+
+## 11) Resumen visual (mapa mental)
+
+```
+POO + Patrones  →  Interfaces (contratos)  →  Beans  →  IoC Container
+                                ↑                ↓
+                        Implementaciones    Inyección (DI)
+```
+
+**Clave:** el dominio depende de **abstracciones**, y Spring se encarga del wiring.  
+Con esto se habilita SOLID (DIP/OCP) y arquitecturas limpias.
+
+---
+
+## 12) Mini‑reto para cerrar el día
+
+- Refactoriza tu CRUD JDBC del proyecto anterior:
+  1. Crea interfaces `EstudianteRepository` y `CursoRepository`.
+  2. Implementa las clases `EstudianteRepositoryJdbc` con `@Repository`.
+  3. Crea un `EstudianteService` anotado con `@Service`.
+  4. Expón un `EstudianteController` anotado con `@RestController`.
+  5. Ejecuta el proyecto en IntelliJ y revisa los logs de inicialización de beans.
