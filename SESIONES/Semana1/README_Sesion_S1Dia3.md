@@ -1,144 +1,107 @@
+# Día 3 — Configuración de Beans, Perfiles y Proyecto Base Limpio en Spring
 
-# Día 3 - Configuración de Beans, Perfiles y Proyecto Base Limpio en Spring
-
-Esta guía te lleva, paso a paso y con ejemplos, desde una organización clásica en Java SE (capas, POO, JDBC) hacia un **proyecto base limpio** en Spring. Vas a dominar:
-- Estrategias de configuración de beans (JavaConfig vs estereotipos).
-- Estructura de paquetes alineada con arquitectura limpia.
-- Perfiles y configuración externa por entorno (dev/test/prod).
-- Propiedades, variables de entorno y secretos.
-- Manejo de excepciones por capa y logging.
-- Decisiones entre JPA y JDBC y su impacto arquitectónico.
-- Configuración detallada en IntelliJ IDEA para un flujo de trabajo fluido.
+Esta guía te lleva, paso a paso, desde una organización clásica en Java SE (capas, POO, JDBC) hacia un **proyecto base limpio** en Spring Framework.  
+Aquí consolidarás conocimientos sobre el ecosistema de Spring: entenderás **qué es un Bean**, cómo se configuran, cómo funcionan los **perfiles por entorno**, y cómo crear una estructura modular que siente las bases para arquitecturas limpias y escalables.
 
 ---
 
-## 1) De Java SE a Spring: ¿por qué reconfigurar el proyecto?
-En Java SE solemos tener:
+## 1) ¿Qué es un Bean y por qué es importante?
+
+En Java SE, tú creas los objetos manualmente con `new`:
+```java
+UsuarioService service = new UsuarioService();
+```
+En Spring, los objetos que forman parte de tu aplicación son **Beans**, y son **creados, configurados y gestionados** por el **contenedor IoC (Inversión de Control)**.  
+El contenedor se encarga de su ciclo de vida: instanciación, inyección de dependencias, inicialización y destrucción.
+
+### Definición formal
+Un **Bean** es **cualquier objeto administrado por el contenedor de Spring**.  
+Puede definirse de tres formas:
+
+1. Mediante anotaciones de estereotipo (`@Component`, `@Service`, `@Repository`, `@Controller`).
+2. Mediante métodos anotados con `@Bean` dentro de una clase `@Configuration`.
+3. Automáticamente a través del **escaneo de componentes** (`@ComponentScan`).
+
+### Ejemplo simple:
+```java
+@Component
+public class NotificadorEmail {
+    public void enviar(String mensaje) {
+        System.out.println("Enviando email: " + mensaje);
+    }
+}
+```
+
+Spring detecta este componente al iniciar el contexto y lo convierte en un Bean disponible para inyección en otras clases.
+
+```java
+@Service
+public class AlertaService {
+    private final NotificadorEmail notificador;
+    public AlertaService(NotificadorEmail notificador) { this.notificador = notificador; }
+}
+```
+
+**Conclusión:** ya no necesitas usar `new`, Spring se encarga del wiring.
+
+---
+
+## 2) De Java SE a Spring: una nueva estructura de responsabilidades
+
+En Java SE, la arquitectura suele verse así:
 ```
 ui/console  →  service  →  dao (JDBC)  →  database
 ```
-- Las dependencias se crean con `new` en cada clase.
-- La configuración (URL de BD, credenciales) queda “dispersa” o embebida en código.
-- Cambiar una implementación (JDBC → JPA) exige refactors amplios.
+El problema: las dependencias se crean a mano, y el código está acoplado.
 
-**Con Spring**, externalizamos configuración, inyectamos dependencias y movemos el wiring a una **capa de configuración**.
-El dominio se mantiene **puro**, y los detalles (JPA/JDBC) viven en **adaptadores**.
+**Con Spring y arquitecturas limpias:**
+```
+entrypoints → application → domain ← infrastructure
+```
+- Las dependencias se inyectan.
+- El dominio es puro (sin dependencias de frameworks).
+- Las configuraciones viven en `infrastructure/config`.
 
 ---
 
-## 2) Estructura de proyecto base (evolutiva a Clean/Hexagonal)
-
-Recomendación inicial (monolito modular con capas limpias):
+## 3) Estructura base del proyecto (Clean-Ready)
 
 ```
 com.riwi.academico
- ├─ domain/                      # entidades/VO/servicios de dominio (sin Spring/JPA)
+ ├─ domain/                      # Entidades, reglas de negocio, interfaces (puertos)
  │   ├─ model/
  │   ├─ service/
- │   └─ spi/                     # puertos (interfaces) que el dominio necesita
- ├─ application/                 # casos de uso (orquestación)
+ │   └─ spi/
+ ├─ application/                 # Casos de uso (orquestación, lógica de aplicación)
  │   └─ usecase/
- ├─ infrastructure/              # detalles técnicos (adaptadores)
- │   ├─ jpa/                     # persistencia con Spring Data JPA
+ ├─ infrastructure/              # Adaptadores (JPA, JDBC, Messaging, APIs externas)
+ │   ├─ jpa/
  │   │   ├─ entity/
- │   │   ├─ repository/          # Spring Data repos
- │   │   └─ adapter/             # implementación de puertos
- │   ├─ jdbc/                    # alternativa: JDBC (si la comparas con JPA)
- │   ├─ messaging/               # Kafka/Email/etc. (más adelante)
- │   ├─ mapper/                  # conversión entidad JPA ↔ dominio
- │   └─ config/                  # @Configuration de beans y perfiles
- ├─ entrypoints/                 # interfaces de entrada
- │   └─ rest/                    # controladores/DTOs/validación
- └─ AcademicoApplication.java    # arranque (si usas Spring Boot)
+ │   │   ├─ repository/
+ │   │   └─ adapter/
+ │   ├─ jdbc/
+ │   ├─ mapper/
+ │   └─ config/
+ ├─ entrypoints/                 # Interfaces de entrada (REST, CLI, WebSocket)
+ │   └─ rest/
+ └─ AcademicoApplication.java
 ```
 
-**Regla de dependencias**: todas las dependencias apuntan hacia dentro (entrypoints → application → domain). `infrastructure` implementa los **puertos** definidos en `domain.spi`.
+**Dependencias:**  
+- Los módulos externos dependen de los internos.  
+- El dominio no conoce a Spring ni a la base de datos.
 
 ---
 
-## 3) Configuración de Beans: JavaConfig vs Estereotipos
+## 4) Configuración de Beans: `@Configuration` vs Estereotipos
 
-### 3.1 Dos estrategias complementarias
-| Aspecto | `@Configuration` + `@Bean` | Estereotipos (`@Component`, `@Service`, `@Repository`) |
-|---|---|---|
-| Control del wiring | Explícito y visible | Conveniente/automático |
-| Uso recomendado | Casos de uso y ensamblajes críticos | Adaptadores y servicios simples |
-| Testabilidad | Alta (fácil reemplazo de beans) | Alta |
-| Dependencias | Constructor injection | Constructor injection |
+| Enfoque | Ventajas | Cuándo usarlo |
+|----------|-----------|----------------|
+| `@Configuration` + `@Bean` | Wiring explícito, control total | Casos de uso críticos o configuraciones de infraestructura |
+| Estereotipos (`@Component`, `@Service`, `@Repository`) | Simplicidad, menos código | Servicios, adaptadores y controladores |
 
-### 3.2 Ejemplo: wiring explícito de un caso de uso
+### Ejemplo práctico:
 ```java
-// domain/spi/EstudianteRepositoryPort.java (puerto)
-package com.riwi.academico.domain.spi;
-
-import com.riwi.academico.domain.model.Estudiante;
-import java.util.Optional;
-
-public interface EstudianteRepositoryPort {
-    Estudiante guardar(Estudiante e);
-    Optional<Estudiante> porId(String id);
-}
-```
-
-```java
-// application/usecase/RegistrarEstudianteUseCase.java (orquestación)
-package com.riwi.academico.application.usecase;
-
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.spi.EstudianteRepositoryPort;
-
-public class RegistrarEstudianteUseCase {
-    private final EstudianteRepositoryPort repo;
-    public RegistrarEstudianteUseCase(EstudianteRepositoryPort repo) { this.repo = repo; }
-
-    public Estudiante ejecutar(String id, String nombre) {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id requerido");
-        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("nombre requerido");
-        return repo.guardar(new Estudiante(id, nombre));
-    }
-}
-```
-
-```java
-// infrastructure/jpa/adapter/EstudianteJpaAdapter.java (adaptador JPA)
-package com.riwi.academico.infrastructure.jpa.adapter;
-
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.spi.EstudianteRepositoryPort;
-import com.riwi.academico.infrastructure.jpa.entity.EstudianteEntity;
-import com.riwi.academico.infrastructure.jpa.repository.EstudianteJpaRepository;
-import com.riwi.academico.infrastructure.mapper.EstudianteMapper;
-import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
-
-@Repository
-public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
-    private final EstudianteJpaRepository jpa;
-    public EstudianteJpaAdapter(EstudianteJpaRepository jpa){ this.jpa = jpa; }
-
-    @Override
-    public Estudiante guardar(Estudiante e) {
-        EstudianteEntity saved = jpa.save(EstudianteMapper.toEntity(e));
-        return EstudianteMapper.toDomain(saved);
-    }
-
-    @Override
-    public Optional<Estudiante> porId(String id) {
-        return jpa.findById(id).map(EstudianteMapper::toDomain);
-    }
-}
-```
-
-```java
-// infrastructure/config/UseCaseConfig.java (JavaConfig explícito)
-package com.riwi.academico.infrastructure.config;
-
-import com.riwi.academico.application.usecase.RegistrarEstudianteUseCase;
-import com.riwi.academico.domain.spi.EstudianteRepositoryPort;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
 @Configuration
 public class UseCaseConfig {
     @Bean
@@ -147,266 +110,202 @@ public class UseCaseConfig {
     }
 }
 ```
+Esto define un **Bean manualmente** usando **JavaConfig**.
 
-**Por qué así**: el caso de uso es parte de la **arquitectura** y conviene que el wiring sea explícito y visible; los adaptadores van con estereotipos.
+Mientras que los adaptadores pueden declararse así:
+```java
+@Repository
+public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
+    // implementación
+}
+```
+
+Spring detecta automáticamente los Beans por **component scanning** cuando tu clase principal tiene `@SpringBootApplication`.
 
 ---
 
-## 4) Perfiles y configuración externa por entorno
+## 5) Perfiles y configuración externa
 
-### 4.1 Archivos por perfil
-- `application.yml` base.
-- `application-dev.yml`, `application-test.yml`, `application-prod.yml` para sobreescritura.
+### Archivos YAML por entorno
 
-**Ejemplo `application.yml`:**
+**application.yml**
 ```yaml
 spring:
   application:
     name: academico
-logging:
-  level:
-    root: info
+  profiles:
+    active: dev
 ```
 
-**Ejemplo `application-dev.yml`:**
+**application-dev.yml**
 ```yaml
 spring:
   datasource:
-    url: jdbc:h2:mem:acad;MODE=MySQL;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:acad
     username: sa
-    password: 
   jpa:
     hibernate:
       ddl-auto: update
-  profiles:
-    group:
-      local: dev
-server:
-  port: 8080
 logging:
   level:
     org.hibernate.SQL: debug
 ```
 
-**Ejemplo `application-prod.yml`:**
+**application-prod.yml**
 ```yaml
 spring:
   datasource:
     url: jdbc:mysql://localhost:3306/academico
     username: ${DB_USER}
     password: ${DB_PASS}
-  jpa:
-    hibernate:
-      ddl-auto: validate
-server:
-  port: 8080
 ```
 
-### 4.2 Activar perfil
-- VM option: `-Dspring.profiles.active=dev`
-- Variable de entorno: `SPRING_PROFILES_ACTIVE=dev`
+### Activar un perfil
+- Desde IntelliJ: `Run > Edit Configurations > Environment Variables` → `SPRING_PROFILES_ACTIVE=dev`
+- Desde terminal:  
+  ```bash
+  mvn spring-boot:run -Dspring-boot.run.profiles=prod
+  ```
 
-### 4.3 Secretos y variables
-- Nunca codifiques credenciales.
-- Usa variables de entorno o proveedores seguros (cuando escales: Vault/Config Server).
+**Importante:** usa variables de entorno para credenciales y secretos.  
+Ejemplo en Linux:
+```bash
+export DB_USER=root
+export DB_PASS=12345
+```
 
 ---
 
-## 5) Manejo de excepciones y validaciones por capa
+## 6) Manejo de excepciones por capa
 
-### 5.1 Dominio
-- Crea excepciones significativas (por ejemplo, `NegocioException`).
-- Lanza `IllegalArgumentException`/`NegocioException` al violar invariantes.
-
+### Dominio
 ```java
-package com.riwi.academico.domain.exception;
 public class NegocioException extends RuntimeException {
-    public NegocioException(String message){ super(message); }
+    public NegocioException(String mensaje) { super(mensaje); }
 }
 ```
 
-### 5.2 Infraestructura
-- Traduce errores de proveedor (SQL, HTTP) a excepciones propias de infraestructura.
-- Evita filtrar detalles sensibles hacia arriba.
-
-### 5.3 Entrypoints (REST)
-- Manejo global con `@ControllerAdvice` para producir un **contrato uniforme de error**.
-
+### Infraestructura
 ```java
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<?> handleIllegal(IllegalArgumentException ex){
-        return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+@Repository
+public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
+    public Estudiante guardar(Estudiante e) {
+        try {
+            // persistencia
+        } catch (DataAccessException ex) {
+            throw new InfraestructuraException("Error en la base de datos", ex);
+        }
     }
 }
 ```
 
-### 5.4 Validaciones
-- En el borde (DTOs): `@Valid`, `@NotBlank`, `@Size`, etc.
-- No mezclar validación de DTO con reglas de dominio (usa Value Objects cuando aplique).
+### Presentación (REST)
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(NegocioException.class)
+    public ResponseEntity<?> handleNegocio(NegocioException ex) {
+        return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+    }
+}
+```
 
 ---
 
-## 6) Logging y trazabilidad
+## 7) Logging en Spring
 
-- SLF4J + Logback por defecto en Spring Boot.
-- Estructura sugerida de log: `timestamp`, `nivel`, `servicio`, `traceId`, `mensaje`.
-- En dev: elevar nivel de `org.hibernate.SQL` para ver queries.
-- Añadir `traceId`/`correlationId` por request cuando expongas endpoints.
+Spring Boot usa **SLF4J** + **Logback** por defecto.
 
-**Ejemplo `logback-spring.xml` (básico):**
+```java
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Service
+public class EstudianteService {
+    private static final Logger log = LoggerFactory.getLogger(EstudianteService.class);
+
+    public void registrar(Estudiante e) {
+        log.info("Registrando estudiante {}", e.getNombre());
+    }
+}
+```
+
+Configura el formato del log en `logback-spring.xml`:
 ```xml
 <configuration>
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n</pattern>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger - %msg%n</pattern>
     </encoder>
   </appender>
   <root level="INFO">
-    <appender-ref ref="STDOUT" />
+    <appender-ref ref="STDOUT"/>
   </root>
 </configuration>
 ```
 
 ---
 
-## 7) JPA vs JDBC: matriz de decisión
+## 8) JPA vs JDBC: comparativa práctica
 
-| Criterio | JDBC | JPA |
-|---|---|---|
-| Control fino de SQL | Alto | Medio (JPQL/Native) |
-| Productividad CRUD | Media | Alta |
-| Curva de aprendizaje | Baja/Media | Media/Alta |
-| Portabilidad | Alta (estándar SQL) | Alta (JPA), detalles pueden variar |
-| Rendimiento | Excelente si dominas SQL | Bueno; requiere tuning (fetch, batching) |
+| Aspecto | JDBC | JPA |
+|----------|------|-----|
+| Control SQL | Total | Abstracto |
+| Productividad | Media | Alta |
+| Transacciones | Manuales (`conn.commit()`) | Automáticas (`@Transactional`) |
+| Ideal para | Consultas específicas | CRUD, dominio rico |
 
-**Recomendación inicial**: usa JPA para la mayoría de CRUD; emplea JDBC/Native Query para consultas críticas y reporting.
-
----
-
-## 8) Configuración detallada en IntelliJ IDEA
-
-1. Abrir Settings/Preferences.  
-2. Build Tools (Maven/Gradle): habilitar Auto-Import.  
-3. Plugins: Spring, Lombok, SonarLint.  
-4. Compiler → Annotation Processors: habilitar.  
-5. Run/Debug: tipo Spring Boot/Application, VM options `-Dspring.profiles.active=dev`.  
-6. Environment vars (si aplica): `DB_USER`, `DB_PASS`, `DB_URL`.  
-7. Code Style/Inspections: activa inspecciones de Spring/Java.  
-8. Atajos:  
-   - Buscar clases: `Ctrl+N` / `⌘O`  
-   - Buscar símbolos: `Ctrl+Alt+Shift+N` / `⌘⌥O`  
-   - Buscar en todo: `Ctrl+Shift+F` / `⌘⇧F`  
-   - Ir a declaración/uso: `Ctrl+B` / `⌘B`, `Alt+F7` / `⌥F7`
-
----
-
-## 9) Ejemplo completo mínimo (unir piezas)
-
+Ejemplo **JDBC**:
 ```java
-// domain/model/Estudiante.java
-package com.riwi.academico.domain.model;
-public class Estudiante {
-    private final String id;
-    private String nombre;
-    public Estudiante(String id, String nombre){
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id requerido");
-        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("nombre requerido");
-        this.id = id; this.nombre = nombre;
-    }
-    public String getId(){ return id; }
-    public String getNombre(){ return nombre; }
-    public void renombrar(String nuevo){ if(nuevo==null||nuevo.isBlank()) throw new IllegalArgumentException("nombre requerido"); this.nombre = nuevo; }
+String sql = "INSERT INTO estudiante (id, nombre) VALUES (?, ?)";
+try (PreparedStatement ps = conn.prepareStatement(sql)) {
+    ps.setString(1, e.getId());
+    ps.setString(2, e.getNombre());
+    ps.executeUpdate();
 }
 ```
 
+Ejemplo **JPA**:
 ```java
-// infrastructure/jpa/entity/EstudianteEntity.java
-package com.riwi.academico.infrastructure.jpa.entity;
-
-import jakarta.persistence.*;
-@Entity @Table(name="estudiantes")
-public class EstudianteEntity {
-    @Id private String id;
-    @Column(nullable=false) private String nombre;
-    public EstudianteEntity() {}
-    public EstudianteEntity(String id, String nombre){ this.id=id; this.nombre=nombre; }
-    public String getId(){ return id; } public String getNombre(){ return nombre; }
-}
-```
-
-```java
-// infrastructure/jpa/repository/EstudianteJpaRepository.java
-package com.riwi.academico.infrastructure.jpa.repository;
-
-import com.riwi.academico.infrastructure.jpa.entity.EstudianteEntity;
-import org.springframework.data.jpa.repository.JpaRepository;
+@Repository
 public interface EstudianteJpaRepository extends JpaRepository<EstudianteEntity, String> {}
 ```
 
-```java
-// infrastructure/mapper/EstudianteMapper.java
-package com.riwi.academico.infrastructure.mapper;
+---
 
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.infrastructure.jpa.entity.EstudianteEntity;
+## 9) Configuración en IntelliJ IDEA
 
-public class EstudianteMapper {
-    public static EstudianteEntity toEntity(Estudiante d){ return new EstudianteEntity(d.getId(), d.getNombre()); }
-    public static Estudiante toDomain(EstudianteEntity e){ return new Estudiante(e.getId(), e.getNombre()); }
-}
-```
+1. **Crear el proyecto:** File → New → Project → *Spring Initializr*.
+2. **Seleccionar dependencias:** Spring Web, Spring Data JPA, H2 o MySQL Driver, Lombok.
+3. **Configurar perfiles:**  
+   - Run → Edit Configurations → Environment Variables → `SPRING_PROFILES_ACTIVE=dev`
+4. **Activar procesadores de anotaciones:**  
+   - Settings → Build → Compiler → Annotation Processors → “Enable annotation processing”.
+5. **Ver los beans cargados:**  
+   ```java
+   @Bean
+   CommandLineRunner runner(ApplicationContext ctx) {
+       return args -> Arrays.stream(ctx.getBeanDefinitionNames()).forEach(System.out::println);
+   }
+   ```
 
-```java
-// entrypoints/rest/EstudianteController.java
-package com.riwi.academico.entrypoints.rest;
-
-import com.riwi.academico.application.usecase.RegistrarEstudianteUseCase;
-import com.riwi.academico.domain.model.Estudiante;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/estudiantes")
-public class EstudianteController {
-    private final RegistrarEstudianteUseCase registrar;
-    public EstudianteController(RegistrarEstudianteUseCase registrar){ this.registrar = registrar; }
-
-    @PostMapping
-    public ResponseEntity<Estudiante> crear(@RequestParam String id, @RequestParam String nombre){
-        return ResponseEntity.ok(registrar.ejecutar(id, nombre));
-    }
-}
-```
-
-```java
-// infrastructure/config/UseCaseConfig.java (ya mostrado)
-```
+Atajos útiles:  
+- Buscar clase: `Ctrl+N`  
+- Buscar método: `Ctrl+Shift+Alt+N`  
+- Navegar a declaración: `Ctrl+B`  
+- Ver jerarquía: `Ctrl+H`
 
 ---
 
-## 10) Problemas comunes y soluciones
+## 10) Checklist final
 
-| Problema | Causa probable | Solución |
-|---|---|---|
-| `NoSuchBeanDefinitionException` | Falta `@Component`/`@Repository`/`@Configuration` o paquete fuera de `@ComponentScan` | Revisa paquetes y anotaciones |
-| Conflicto de beans del mismo tipo | Varias implementaciones | Usa `@Qualifier` o `@Primary` |
-| `Failed to configure a DataSource` | Datos de conexión inválidos | Verifica `application-*.yml` y variables de entorno |
-| Errores de validación de JPA | Entidades mal mapeadas | Revisa `@Id`, `@Column`, nombres de tabla |
-| `Circular dependency` | A ↔ B se inyectan mutuamente | Introduce puertos o refactoriza responsabilidades |
+- [x] Beans definidos y detectados correctamente.  
+- [x] Perfiles y propiedades por entorno funcionando.  
+- [x] Manejo de excepciones por capa implementado.  
+- [x] Logging configurado.  
+- [x] Proyecto base estructurado con arquitectura limpia.
 
 ---
 
-## 11) Checklist del día
-- Estructura base creada con `domain/application/infrastructure/entrypoints`.
-- Casos de uso inyectados con **JavaConfig** (`@Bean`).  
-- Perfiles configurados: `dev`, `test`, `prod`.  
-- Propiedades externas y secretos sin hardcode.  
-- Manejo de excepciones por capa y logging configurado.  
-- Decisiones JPA/JDBC documentadas.
-
----
-
-## 12) Próximos pasos
-A partir de este proyecto base, en la próxima sesión pasarás a **Spring Boot**, autoconfiguración, y a reforzar la **arquitectura limpia** con pruebas por capas y documentación de dependencias.
+**Resultado esperado:**  
+Un proyecto Spring modular, mantenible y escalable, con Beans bien configurados, perfiles activos y separación clara entre dominio, aplicación, infraestructura y presentación.
