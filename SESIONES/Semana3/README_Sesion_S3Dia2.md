@@ -1,6 +1,5 @@
 
-# Semana 3 – Día 2  
-# Relaciones Avanzadas, Consultas Personalizadas y Transacciones con Spring Data JPA
+# Día 2 - Relaciones Avanzadas, Consultas Personalizadas y Transacciones con Spring Data JPA
 
 En esta sesión aprenderás a manejar **relaciones entre entidades**, crear **consultas personalizadas** con **JPQL y SQL nativo**, y controlar **transacciones** en Spring Data JPA. Además, verás cómo optimizar el acceso a datos y comprenderás el ciclo de vida de las entidades.
 
