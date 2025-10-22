@@ -1,8 +1,14 @@
-
-# Dia 3 - Arquitectura Hexagonal (Ports & Adapters) con Spring Boot, JUnit y Mockito
+# Día 3 - Arquitectura Hexagonal (Ports & Adapters) con Spring Boot, JUnit y Mockito
 
 En esta sesión aprenderás a diseñar aplicaciones **altamente desacopladas** siguiendo el enfoque de **Arquitectura Hexagonal (Ports & Adapters)**.  
 Este modelo fue introducido por *Alistair Cockburn* y es la base de muchas implementaciones modernas de **Clean Architecture** y **Domain-Driven Design (DDD)**.
+
+---
+
+## Contexto educativo
+
+Este día marca la **transición natural** desde la **arquitectura por capas clásica** (que tus coders ya dominan) hacia un modelo **más limpio, modular y mantenible**.  
+El objetivo es entender que lo aprendido sobre *services*, *repositories* y *controllers* sigue siendo válido, pero ahora se organiza bajo principios de **independencia del dominio**, **inversión de dependencias** y **testabilidad aislada**.
 
 ---
 
@@ -232,17 +238,15 @@ public class BeanConfig {
 
 | Beneficio | Explicación |
 |------------|-------------|
-| Desacoplamiento | El dominio no depende de frameworks ni bases de datos |
-| Sustituibilidad | Cambiar JPA por Mongo o REST sin tocar el dominio |
-| Testabilidad | Se pueden crear mocks de los puertos fácilmente |
-| Extensibilidad | Nuevos adaptadores sin modificar el núcleo |
-| Claridad | Separa lo esencial (reglas) de lo accesorio (infraestructura) |
+| **Desacoplamiento** | El dominio no depende de frameworks ni bases de datos. |
+| **Sustituibilidad** | Cambiar JPA por Mongo o REST sin tocar el dominio. |
+| **Testabilidad** | Se pueden crear mocks de los puertos fácilmente. |
+| **Extensibilidad** | Nuevos adaptadores sin modificar el núcleo. |
+| **Claridad** | Separa lo esencial (reglas) de lo accesorio (infraestructura). |
 
 ---
 
 ## 7) Testing de dominio con JUnit y Mockito
-
-### 7.1 Prueba del caso de uso con Mock de puerto
 
 ```java
 // domain/service/RegistrarEstudianteServiceTest.java
@@ -282,40 +286,42 @@ class RegistrarEstudianteServiceTest {
 
 ---
 
-## 8) Configuración IntelliJ IDEA para este entorno
+## 8) Comparativa con Arquitectura por Capas
 
-1. **Crear proyecto:**  
-   - `File → New → Project → Spring Initializr`  
-   - Dependencias: *Spring Web*, *Spring Data JPA*, *H2 Database*, *Lombok*, *Spring Boot Test*.
+| Concepto | En arquitectura por capas | En arquitectura hexagonal |
+|-----------|----------------------------|-----------------------------|
+| Orquestación de reglas | `Service` (capa de aplicación) | **Caso de uso** (*Input Port*) |
+| Acceso a datos | `Repository` (Spring Data) | **Puerto de salida** + **Adaptador (JPA)** |
+| Exposición HTTP | `Controller` | **Adaptador de entrada (REST)** |
+| Modelo de negocio | Entidades JPA | **Modelo de dominio puro (sin dependencias)** |
+| Dependencias | Controller → Service → Repository | Adaptadores → Puertos → Dominio |
+| Sustituir BD/API | Difícil, rompe varias capas | Solo se cambia el adaptador |
+| Testabilidad | A menudo depende del contexto de Spring | Casos de uso aislados, fáciles de mockear |
 
-2. **Estructurar paquetes:** sigue la organización del punto 3.
-
-3. **Plugins recomendados:** Spring Tools, Lombok, SonarLint, Docker, JUnit.
-
-4. **Annotation Processing:**  
-   - `Settings → Build, Execution, Deployment → Compiler → Annotation Processors → Enable annotation processing`.
-
-5. **Atajos útiles:**  
-   - Buscar clase: `Ctrl+N` / `⌘O`  
-   - Buscar método/símbolo: `Ctrl+Alt+Shift+N` / `⌘⌥O`  
-   - Ejecutar test: `Ctrl+Shift+F10` / `⌘⇧R`  
-   - Debug test: `Shift+F9` / `⌘⇧D`
-
-6. **Run Configurations:**  
-   - VM Options: `-Dspring.profiles.active=dev`  
-   - Variables: `DB_USER`, `DB_PASS` si aplica.
+**Resumen:**  
+El *Service* clásico se convierte en un **caso de uso**; los *repositories* en **puertos**; y las **implementaciones concretas** (JPA, REST, Kafka, etc.) en **adaptadores**.  
+El dominio no conoce ni Spring, ni JPA, ni HTTP.
 
 ---
 
-## 9) Conclusión
+## 9) Flujo visual de dependencias
+
+```
+Arquitectura por Capas:        Arquitectura Hexagonal:
+
+Controller → Service → Repo    Adaptadores → Puertos → Dominio
+(Depende de infra)             (Independiente del framework)
+```
+
+---
+
+## 10) Conclusión
 
 - La **Arquitectura Hexagonal** separa el dominio de la infraestructura.  
 - Los **puertos/gateways** definen los contratos del dominio.  
 - Los **adaptadores** conectan el mundo real con esos contratos.  
 - Con **Spring**, los beans se configuran para unir ambos mundos.  
 - Con **JUnit + Mockito**, se puede probar el dominio sin cargar el framework.
-
----
 
 **Resultado esperado:**  
 Aplicación Spring Boot estructurada bajo principios hexagonales, con puertos y adaptadores claros, dominio independiente y casos de uso testeables con mocks.

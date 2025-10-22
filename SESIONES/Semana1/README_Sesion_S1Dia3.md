@@ -1,28 +1,57 @@
-# Día 3 — Configuración de Beans, Perfiles y Proyecto Base Limpio en Spring
+# Día 3 - Configuración de Beans, Perfiles y Proyecto Base Limpio en Spring
 
-Esta guía te lleva, paso a paso, desde una organización clásica en Java SE (capas, POO, JDBC) hacia un **proyecto base limpio** en Spring Framework.  
-Aquí consolidarás conocimientos sobre el ecosistema de Spring: entenderás **qué es un Bean**, cómo se configuran, cómo funcionan los **perfiles por entorno**, y cómo crear una estructura modular que siente las bases para arquitecturas limpias y escalables.
+Esta guía te lleva, paso a paso, desde una organización clásica en **Java SE (capas, POO, JDBC)** hacia un **proyecto base limpio y modular** con **Spring Framework**.  
+El objetivo es comprender **qué es un Bean**, cómo se configuran, qué son los **perfiles por entorno**, y cómo estructurar un proyecto preparado para crecer hacia arquitecturas limpias.
 
 ---
 
-## 1) ¿Qué es un Bean y por qué es importante?
+## Contexto educativo
 
-En Java SE, tú creas los objetos manualmente con `new`:
+Los estudiantes vienen de trabajar con **arquitectura por capas tradicional**, donde el flujo era:
+
+```
+UI / Consola → Servicio → DAO → Base de datos
+```
+
+Ahora aprenderán a trasladar esos conceptos al ecosistema Spring, entendiendo cómo **los Beans reemplazan las instancias manuales**, cómo los **perfiles facilitan entornos**, y cómo **configurar un proyecto base** con separación clara de responsabilidades.
+
+---
+
+## 1. ¿Qué es un Bean y por qué es importante?
+
+En Java puro, los objetos se crean manualmente con `new`:
+
 ```java
 UsuarioService service = new UsuarioService();
 ```
-En Spring, los objetos que forman parte de tu aplicación son **Beans**, y son **creados, configurados y gestionados** por el **contenedor IoC (Inversión de Control)**.  
-El contenedor se encarga de su ciclo de vida: instanciación, inyección de dependencias, inicialización y destrucción.
+
+En Spring, los objetos que forman parte de la aplicación son **Beans**, creados y gestionados por el **contenedor IoC (Inversión de Control)**.  
+Este contenedor se encarga de su ciclo de vida: instanciación, inyección de dependencias, inicialización y destrucción.
 
 ### Definición formal
+
 Un **Bean** es **cualquier objeto administrado por el contenedor de Spring**.  
-Puede definirse de tres formas:
+Spring se encarga de crearlo, configurarlo y ponerlo a disposición de otras clases que lo necesiten.
 
-1. Mediante anotaciones de estereotipo (`@Component`, `@Service`, `@Repository`, `@Controller`).
-2. Mediante métodos anotados con `@Bean` dentro de una clase `@Configuration`.
-3. Automáticamente a través del **escaneo de componentes** (`@ComponentScan`).
+---
 
-### Ejemplo simple:
+## 2. Cómo se define un Bean en Spring
+
+Existen tres formas principales de definir Beans.
+
+### 1. Usando anotaciones de estereotipo
+
+Estas anotaciones identifican clases como componentes de Spring:
+
+| Anotación | Propósito | Capa típica |
+|------------|------------|-------------|
+| `@Component` | Marca un componente genérico | Utilidades o helpers |
+| `@Service` | Indica un servicio o caso de uso | Capa de negocio o aplicación |
+| `@Repository` | Indica una clase que accede a la base de datos | Capa de persistencia |
+| `@Controller` | Controlador web MVC | Capa de presentación |
+
+Ejemplo:
+
 ```java
 @Component
 public class NotificadorEmail {
@@ -30,77 +59,134 @@ public class NotificadorEmail {
         System.out.println("Enviando email: " + mensaje);
     }
 }
-```
 
-Spring detecta este componente al iniciar el contexto y lo convierte en un Bean disponible para inyección en otras clases.
-
-```java
 @Service
 public class AlertaService {
     private final NotificadorEmail notificador;
-    public AlertaService(NotificadorEmail notificador) { this.notificador = notificador; }
+
+    public AlertaService(NotificadorEmail notificador) {
+        this.notificador = notificador;
+    }
+
+    public void enviarAlerta() {
+        notificador.enviar("Nueva alerta generada");
+    }
 }
 ```
 
-**Conclusión:** ya no necesitas usar `new`, Spring se encarga del wiring.
+Spring detecta automáticamente ambas clases, las registra como Beans y se encarga de la inyección.
 
 ---
 
-## 2) De Java SE a Spring: una nueva estructura de responsabilidades
+### 2. Usando `@Configuration` + `@Bean`
 
-En Java SE, la arquitectura suele verse así:
-```
-ui/console  →  service  →  dao (JDBC)  →  database
-```
-El problema: las dependencias se crean a mano, y el código está acoplado.
+Permite definir Beans manualmente con control total sobre su creación.  
+Ideal para servicios complejos o configuración de infraestructura.
 
-**Con Spring y arquitecturas limpias:**
+```java
+@Configuration
+public class ConfiguracionAplicacion {
+
+    @Bean
+    public NotificadorEmail notificadorEmail() {
+        return new NotificadorEmail();
+    }
+
+    @Bean
+    public AlertaService alertaService(NotificadorEmail notificador) {
+        return new AlertaService(notificador);
+    }
+}
 ```
-entrypoints → application → domain ← infrastructure
-```
-- Las dependencias se inyectan.
-- El dominio es puro (sin dependencias de frameworks).
-- Las configuraciones viven en `infrastructure/config`.
+
+Esto es equivalente a usar `new`, pero dentro del contexto Spring y con gestión completa del ciclo de vida.
 
 ---
 
-## 3) Estructura base del proyecto (Clean-Ready)
+### 3. Escaneo automático de componentes
+
+Cuando la clase principal tiene `@SpringBootApplication`, se activa el **component scan**, que busca Beans en los subpaquetes.
+
+```java
+@SpringBootApplication
+public class AcademicoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(AcademicoApplication.class, args);
+    }
+}
+```
+
+Por defecto, escaneará todo el paquete `com.riwi.academico` y sus subpaquetes.
+
+---
+
+## 3. Inversión de Control e Inyección de Dependencias
+
+### Antes (Java SE)
+
+```java
+ServicioNotificacion servicio = new ServicioNotificacion();
+Controlador controlador = new Controlador(servicio);
+```
+
+### Ahora (Spring IoC)
+
+Spring crea los objetos y los inyecta automáticamente.
+
+```java
+@RestController
+public class Controlador {
+    private final ServicioNotificacion servicio;
+
+    public Controlador(ServicioNotificacion servicio) {
+        this.servicio = servicio;
+    }
+}
+```
+
+Spring detecta que `ServicioNotificacion` es un Bean (`@Service`) y lo inyecta sin necesidad de `new`.
+
+Ventaja: el código está desacoplado y las dependencias se gestionan desde el contenedor.
+
+---
+
+## 4. Estructura base del proyecto (Clean-Ready)
 
 ```
 com.riwi.academico
- ├─ domain/                      # Entidades, reglas de negocio, interfaces (puertos)
+ ├─ domain/                  # Entidades, reglas de negocio, interfaces (puertos)
  │   ├─ model/
  │   ├─ service/
  │   └─ spi/
- ├─ application/                 # Casos de uso (orquestación, lógica de aplicación)
+ ├─ application/             # Casos de uso (servicios de aplicación)
  │   └─ usecase/
- ├─ infrastructure/              # Adaptadores (JPA, JDBC, Messaging, APIs externas)
+ ├─ infrastructure/          # Adaptadores (JPA, JDBC, APIs externas)
  │   ├─ jpa/
- │   │   ├─ entity/
- │   │   ├─ repository/
- │   │   └─ adapter/
  │   ├─ jdbc/
  │   ├─ mapper/
  │   └─ config/
- ├─ entrypoints/                 # Interfaces de entrada (REST, CLI, WebSocket)
+ ├─ entrypoints/             # Controladores REST o CLI
  │   └─ rest/
  └─ AcademicoApplication.java
 ```
 
-**Dependencias:**  
-- Los módulos externos dependen de los internos.  
-- El dominio no conoce a Spring ni a la base de datos.
+En esta estructura:
+- **domain:** no conoce Spring ni frameworks externos.  
+- **application:** coordina los casos de uso.  
+- **infrastructure:** implementa detalles técnicos.  
+- **entrypoints:** expone endpoints (controladores).
 
 ---
 
-## 4) Configuración de Beans: `@Configuration` vs Estereotipos
+## 5. Configuración de Beans: cuándo usar cada enfoque
 
-| Enfoque | Ventajas | Cuándo usarlo |
-|----------|-----------|----------------|
-| `@Configuration` + `@Bean` | Wiring explícito, control total | Casos de uso críticos o configuraciones de infraestructura |
-| Estereotipos (`@Component`, `@Service`, `@Repository`) | Simplicidad, menos código | Servicios, adaptadores y controladores |
+| Enfoque | Cuándo usarlo | Ventajas |
+|----------|----------------|-----------|
+| `@Configuration` + `@Bean` | Beans de infraestructura o librerías externas | Control explícito sobre instanciación |
+| Estereotipos (`@Component`, `@Service`, `@Repository`) | Clases de negocio o aplicación | Sencillez y autodescubrimiento |
 
-### Ejemplo práctico:
+Ejemplo combinado:
+
 ```java
 @Configuration
 public class UseCaseConfig {
@@ -109,26 +195,21 @@ public class UseCaseConfig {
         return new RegistrarEstudianteUseCase(repo);
     }
 }
-```
-Esto define un **Bean manualmente** usando **JavaConfig**.
 
-Mientras que los adaptadores pueden declararse así:
-```java
 @Repository
 public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
-    // implementación
+    // Implementación CRUD
 }
 ```
 
-Spring detecta automáticamente los Beans por **component scanning** cuando tu clase principal tiene `@SpringBootApplication`.
-
 ---
 
-## 5) Perfiles y configuración externa
+## 6. Perfiles y configuración externa
 
-### Archivos YAML por entorno
+Los perfiles permiten tener propiedades distintas según el entorno (desarrollo, pruebas, producción).
 
 **application.yml**
+
 ```yaml
 spring:
   application:
@@ -138,10 +219,11 @@ spring:
 ```
 
 **application-dev.yml**
+
 ```yaml
 spring:
   datasource:
-    url: jdbc:h2:mem:acad
+    url: jdbc:h2:mem:academico
     username: sa
   jpa:
     hibernate:
@@ -152,6 +234,7 @@ logging:
 ```
 
 **application-prod.yml**
+
 ```yaml
 spring:
   datasource:
@@ -160,46 +243,51 @@ spring:
     password: ${DB_PASS}
 ```
 
-### Activar un perfil
-- Desde IntelliJ: `Run > Edit Configurations > Environment Variables` → `SPRING_PROFILES_ACTIVE=dev`
-- Desde terminal:  
-  ```bash
-  mvn spring-boot:run -Dspring-boot.run.profiles=prod
-  ```
+Activación del perfil:
 
-**Importante:** usa variables de entorno para credenciales y secretos.  
-Ejemplo en Linux:
+Terminal:
+
 ```bash
-export DB_USER=root
-export DB_PASS=12345
+mvn spring-boot:run -Dspring-boot.run.profiles=prod
+```
+
+IntelliJ IDEA:
+
+```
+Run → Edit Configurations → Environment Variables → SPRING_PROFILES_ACTIVE=dev
 ```
 
 ---
 
-## 6) Manejo de excepciones por capa
+## 7. Manejo de excepciones por capa
 
-### Dominio
+Cada capa debe manejar sus errores de forma coherente.
+
+**Dominio**
+
 ```java
 public class NegocioException extends RuntimeException {
     public NegocioException(String mensaje) { super(mensaje); }
 }
 ```
 
-### Infraestructura
+**Infraestructura**
+
 ```java
 @Repository
-public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
+public class EstudianteJpaAdapter {
     public Estudiante guardar(Estudiante e) {
         try {
             // persistencia
         } catch (DataAccessException ex) {
-            throw new InfraestructuraException("Error en la base de datos", ex);
+            throw new InfraestructuraException("Error al acceder a la base de datos", ex);
         }
     }
 }
 ```
 
-### Presentación (REST)
+**Presentación**
+
 ```java
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -212,9 +300,9 @@ public class GlobalExceptionHandler {
 
 ---
 
-## 7) Logging en Spring
+## 8. Logging en Spring
 
-Spring Boot usa **SLF4J** + **Logback** por defecto.
+Spring Boot usa SLF4J + Logback por defecto.
 
 ```java
 import org.slf4j.Logger;
@@ -225,12 +313,13 @@ public class EstudianteService {
     private static final Logger log = LoggerFactory.getLogger(EstudianteService.class);
 
     public void registrar(Estudiante e) {
-        log.info("Registrando estudiante {}", e.getNombre());
+        log.info("Registrando estudiante: {}", e.getNombre());
     }
 }
 ```
 
-Configura el formato del log en `logback-spring.xml`:
+Configuración personalizada (`logback-spring.xml`):
+
 ```xml
 <configuration>
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -246,16 +335,17 @@ Configura el formato del log en `logback-spring.xml`:
 
 ---
 
-## 8) JPA vs JDBC: comparativa práctica
+## 9. JPA vs JDBC
 
-| Aspecto | JDBC | JPA |
-|----------|------|-----|
+| Característica | JDBC | JPA |
+|----------------|------|-----|
 | Control SQL | Total | Abstracto |
 | Productividad | Media | Alta |
 | Transacciones | Manuales (`conn.commit()`) | Automáticas (`@Transactional`) |
-| Ideal para | Consultas específicas | CRUD, dominio rico |
+| Ideal para | Consultas personalizadas | CRUD y dominio rico |
 
-Ejemplo **JDBC**:
+**Ejemplo JDBC**
+
 ```java
 String sql = "INSERT INTO estudiante (id, nombre) VALUES (?, ?)";
 try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -265,7 +355,8 @@ try (PreparedStatement ps = conn.prepareStatement(sql)) {
 }
 ```
 
-Ejemplo **JPA**:
+**Ejemplo JPA**
+
 ```java
 @Repository
 public interface EstudianteJpaRepository extends JpaRepository<EstudianteEntity, String> {}
@@ -273,39 +364,38 @@ public interface EstudianteJpaRepository extends JpaRepository<EstudianteEntity,
 
 ---
 
-## 9) Configuración en IntelliJ IDEA
+## 10. Configuración en IntelliJ IDEA
 
-1. **Crear el proyecto:** File → New → Project → *Spring Initializr*.
-2. **Seleccionar dependencias:** Spring Web, Spring Data JPA, H2 o MySQL Driver, Lombok.
-3. **Configurar perfiles:**  
-   - Run → Edit Configurations → Environment Variables → `SPRING_PROFILES_ACTIVE=dev`
-4. **Activar procesadores de anotaciones:**  
-   - Settings → Build → Compiler → Annotation Processors → “Enable annotation processing”.
-5. **Ver los beans cargados:**  
-   ```java
-   @Bean
-   CommandLineRunner runner(ApplicationContext ctx) {
-       return args -> Arrays.stream(ctx.getBeanDefinitionNames()).forEach(System.out::println);
-   }
-   ```
+1. Crear proyecto con Spring Initializr.  
+2. Dependencias: Spring Web, Spring Data JPA, H2 o MySQL, Lombok.  
+3. Activar perfil: `SPRING_PROFILES_ACTIVE=dev`.  
+4. Habilitar Annotation Processing.  
+5. Ver Beans cargados:
 
-Atajos útiles:  
+```java
+@Bean
+CommandLineRunner runner(ApplicationContext ctx) {
+    return args -> Arrays.stream(ctx.getBeanDefinitionNames()).forEach(System.out::println);
+}
+```
+
+Atajos:  
 - Buscar clase: `Ctrl+N`  
 - Buscar método: `Ctrl+Shift+Alt+N`  
-- Navegar a declaración: `Ctrl+B`  
-- Ver jerarquía: `Ctrl+H`
+- Ver jerarquía: `Ctrl+H`  
+- Ir a definición: `Ctrl+B`
 
 ---
 
-## 10) Checklist final
+## 11. Checklist final
 
-- [x] Beans definidos y detectados correctamente.  
-- [x] Perfiles y propiedades por entorno funcionando.  
-- [x] Manejo de excepciones por capa implementado.  
-- [x] Logging configurado.  
-- [x] Proyecto base estructurado con arquitectura limpia.
+- [x] Beans configurados correctamente  
+- [x] Perfiles por entorno activos  
+- [x] Excepciones por capa gestionadas  
+- [x] Logging funcional  
+- [x] Proyecto modular y listo para escalar  
 
 ---
 
 **Resultado esperado:**  
-Un proyecto Spring modular, mantenible y escalable, con Beans bien configurados, perfiles activos y separación clara entre dominio, aplicación, infraestructura y presentación.
+Un proyecto Spring modular, mantenible y limpio, con Beans bien configurados, perfiles activos, excepciones controladas y una arquitectura base lista para evolucionar hacia Clean Architecture o Hexagonal.
