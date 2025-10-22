@@ -1,5 +1,4 @@
-# Semana 6 – Día 2  
-## Spring Cloud: Config Server, Eureka (Discovery) y API Gateway **con Arquitectura Hexagonal**
+# Día 2 - Spring Cloud: Config Server, Eureka (Discovery) y API Gateway **con Arquitectura Hexagonal**
 
 En esta sesión montarás una **plataforma mínima de microservicios** totalmente gratuita y **gateway‑céntrica** con **Spring Cloud Config Server** (configuración centralizada), **Eureka Server** (descubrimiento de servicios) y **Spring Cloud Gateway** (enrutamiento). Los microservicios mantienen **arquitectura hexagonal**: casos de uso y dominio libres de framework; documentación (springdoc) y observabilidad (actuator) viven en **adapters de infraestructura**.  
 Todas las pruebas y accesos externos se realizan **exclusivamente por el API Gateway**.

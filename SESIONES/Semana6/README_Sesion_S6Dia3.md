@@ -1,5 +1,4 @@
-# Semana 6 – Día 3  
-## Documentación centralizada **vía API Gateway** + Pruebas de Contrato y Healthchecks **en Arquitectura Hexagonal**
+# Día 3 - Documentación centralizada **vía API Gateway** + Pruebas de Contrato y Healthchecks **en Arquitectura Hexagonal**
 
 En esta sesión consolidarás la plataforma de microservicios del Día 2 respetando **arquitectura hexagonal**: los contratos OpenAPI, healthchecks y pruebas se organizan como **adaptadores** alrededor de casos de uso y puertos. **Todo el tráfico HTTP se consume por el API Gateway**; los servicios no exponen controladores “públicos” directos a clientes externos.
 

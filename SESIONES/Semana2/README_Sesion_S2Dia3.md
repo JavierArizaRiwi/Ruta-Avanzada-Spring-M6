@@ -1,5 +1,5 @@
 
-# Dia3 - Arquitectura Hexagonal (Ports & Adapters) con Spring Boot, JUnit y Mockito
+# Dia 3 - Arquitectura Hexagonal (Ports & Adapters) con Spring Boot, JUnit y Mockito
 
 En esta sesión aprenderás a diseñar aplicaciones **altamente desacopladas** siguiendo el enfoque de **Arquitectura Hexagonal (Ports & Adapters)**.  
 Este modelo fue introducido por *Alistair Cockburn* y es la base de muchas implementaciones modernas de **Clean Architecture** y **Domain-Driven Design (DDD)**.

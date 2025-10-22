@@ -1,5 +1,4 @@
-# Semana 6 – Día 1  
-## Testing y Calidad en Microservicios con JUnit 5, Mockito, JaCoCo y SonarLint **en Arquitectura Hexagonal**
+# Día 1 - Testing y Calidad en Microservicios con JUnit 5, Mockito, JaCoCo y SonarLint **en Arquitectura Hexagonal**
 
 En esta sesión construirás una **base sólida de calidad** para microservicios Spring Boot con enfoque **hexagonal**: pruebas **unitarias** (casos de uso) y **web-slice** (controladores) con **JUnit 5** y **Mockito**, **cobertura** con **JaCoCo**, y **análisis estático** con **SonarLint** (y opcionalmente SonarQube Community local).  
 Usaremos un microservicio educativo: **`pedidos-service`**. Todo acceso externo real a la plataforma se hace **a través del API Gateway** (ver Día 2 y 3), pero en este día nos enfocamos en **tests locales del servicio**.

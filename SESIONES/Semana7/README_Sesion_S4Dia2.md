@@ -1,5 +1,4 @@
-# Semana 7 – Día 2  
-## Cache y Rendimiento con Redis en Spring Boot **con Arquitectura Hexagonal y acceso vía API Gateway**
+# Día 2 - Cache y Rendimiento con Redis en Spring Boot **con Arquitectura Hexagonal y acceso vía API Gateway**
 
 En esta sesión integrarás **Redis** como **adaptador secundario** de caché dentro de una **arquitectura hexagonal**.  
 El **dominio** y los **casos de uso** no dependen de Spring ni de Redis; en cambio usan **puertos** que luego implementamos con un **adaptador Redis**.  

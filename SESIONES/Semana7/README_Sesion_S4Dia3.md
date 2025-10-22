@@ -1,5 +1,4 @@
-# Semana 7 – Día 3  
-## Observabilidad Hexagonal con Actuator, Micrometer/Prometheus y Grafana **a través del API Gateway**
+# Día 3 - Observabilidad Hexagonal con Actuator, Micrometer/Prometheus y Grafana **a través del API Gateway**
 
 Cerramos la ruta montando **observabilidad completa** para nuestros microservicios siguiendo **arquitectura hexagonal** y consumiendo **todas las rutas vía API Gateway**. Tendrás **healthchecks**, **métricas de Prometheus** (Micrometer) y **dashboards Grafana**, sin costos, reproducible en local con Docker.
 

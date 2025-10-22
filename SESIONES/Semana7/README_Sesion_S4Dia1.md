@@ -1,5 +1,4 @@
-# Semana 7 – Día 1  
-## Comunicación Asíncrona con RabbitMQ **en Arquitectura Hexagonal** (Publisher–Subscriber educativo, acceso vía API Gateway)
+# Día 1 - Comunicación Asíncrona con RabbitMQ **en Arquitectura Hexagonal** (Publisher–Subscriber educativo, acceso vía API Gateway)
 
 En esta sesión integrarás **RabbitMQ** como *message broker* dentro de un ecosistema de **microservicios hexagonales**.  
 Los endpoints HTTP para publicar eventos se **consumen a través del API Gateway**, mientras que la mensajería entre servicios se realiza **directamente por RabbitMQ** (no pasa por el gateway).  

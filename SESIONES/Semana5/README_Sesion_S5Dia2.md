@@ -1,5 +1,4 @@
-# Semana 5 – Día 2  
-## Validación con Jakarta Validation y Manejo Global de Errores en Spring Boot **(Arquitectura Hexagonal + REST Adapter)**
+# Día 2 - Validación con Jakarta Validation y Manejo Global de Errores en Spring Boot **(Arquitectura Hexagonal + REST Adapter)**
 
 En esta sesión reforzarás la calidad del contrato HTTP aplicando **validación automática** con `@Valid` y un **manejador global de excepciones** que devuelva errores consistentes, manteniendo el **dominio y los casos de uso libres de framework**.  
 Continuamos con el dominio educativo de **Estudiantes** y reusamos la base del Día 1, ahora organizada en **puertos/adaptadores**. El tráfico externo en plataforma se hará por **API Gateway** en semanas siguientes; hoy trabajamos el **servicio en local**.

@@ -1,5 +1,4 @@
-# Semana 5 – Día 3  
-## Testing con JUnit 5 y Mockito + Documentación con Swagger (OpenAPI) **en Arquitectura Hexagonal**
+# Día 3 - Testing con JUnit 5 y Mockito + Documentación con Swagger (OpenAPI) **en Arquitectura Hexagonal**
 
 En esta sesión aprenderás a **probar tu API REST** (unitarias de casos de uso y web-slice del controlador) con **JUnit 5 y Mockito** y a **documentarla automáticamente** con **Swagger (springdoc-openapi)**, manteniendo **arquitectura hexagonal**: dominio y casos de uso libres de framework; documentación y controladores en **adapters**.  
 Este día cierra la Semana 5 con una base profesional: código probado y contrato documentado. (El consumo externo en plataforma se hará **vía API Gateway** en semanas siguientes; hoy probamos el servicio de forma local).

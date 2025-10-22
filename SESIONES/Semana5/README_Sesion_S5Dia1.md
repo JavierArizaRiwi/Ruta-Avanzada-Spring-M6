@@ -1,5 +1,4 @@
-# Semana 5 – Día 1  
-## Creación de Endpoints REST con Spring MVC y DTOs **(Arquitectura Hexagonal + Adapter REST)**
+# Día 1 - Creación de Endpoints REST con Spring MVC y DTOs **(Arquitectura Hexagonal + Adapter REST)**
 
 En esta sesión aprenderás a exponer servicios REST profesionales usando **Spring MVC**, aplicando principios de **arquitectura hexagonal**, separación de capas y **validaciones automáticas**.  
 Dominio educativo: **Estudiantes**. Todo consumo **externo** en plataforma será **vía API Gateway** (Semana 6); hoy trabajamos el **servicio en local** y preparamos una estructura impecable que luego conectaremos a otros adaptadores (JPA, cache, colas, etc.).
