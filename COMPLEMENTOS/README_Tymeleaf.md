@@ -1,23 +1,186 @@
-#  Guía: Integración de Thymeleaf con Controladores REST (Spring Boot)
+# Guía Profesional de Thymeleaf en Spring Boot
 
-> **Objetivo:** Aprender a consumir y renderizar datos de controladores REST (`@RestController`) desde vistas Thymeleaf, utilizando `RestTemplate` o `WebClient` y plantillas HTML dinámicas.
+## Introducción
+
+Thymeleaf es un motor de plantillas moderno para Java, ampliamente utilizado en aplicaciones web con Spring Boot. Permite crear vistas HTML dinámicas, integrando datos del backend de forma segura y eficiente. Su sintaxis es intuitiva y se integra perfectamente con el modelo MVC de Spring.
 
 ---
 
-##  Dependencias necesarias
+## Integración con Spring Boot
 
-Agrega las dependencias de **Thymeleaf** y del **starter web** en tu `pom.xml`:
+### Dependencias necesarias
+
+Incluye en tu `pom.xml`:
 
 ```xml
-<dependencies>
-    <!-- Web y MVC -->
-    <dependency>
+<dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-thymeleaf</artifactId>
+</dependency>
+<dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
+</dependency>
+<dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-validation</artifactId>
+</dependency>
+```
 
-    <!-- Thymeleaf -->
-    <dependency>
+---
+
+## Controladores y Modelo de Datos
+
+### Uso de `@ModelAttribute`
+
+`@ModelAttribute` se utiliza para vincular datos entre el backend y la vista. Puede aplicarse a métodos o parámetros:
+
+#### A nivel de método
+
+```java
+@ModelAttribute("usuario")
+public Usuario crearUsuario() {
+        return new Usuario();
+}
+```
+Este método se ejecuta antes de cada petición y añade el objeto `usuario` al modelo.
+
+#### A nivel de parámetro
+
+```java
+@PostMapping("/usuarios")
+public String guardarUsuario(@ModelAttribute Usuario usuario) {
+        // Procesa el usuario recibido del formulario
+        return "usuarios";
+}
+```
+Permite recibir datos de formularios directamente en el objeto.
+
+---
+
+## Directivas Principales de Thymeleaf
+
+- **th:text**: Inserta texto escapado.
+    ```html
+    <span th:text="${usuario.nombre}"></span>
+    ```
+- **th:each**: Itera sobre colecciones.
+    ```html
+    <tr th:each="usuario : ${usuarios}">
+            <td th:text="${usuario.nombre}"></td>
+    </tr>
+    ```
+- **th:if / th:unless**: Condicionales.
+    ```html
+    <div th:if="${usuario.activo}">Activo</div>
+    ```
+- **th:href / th:src**: Enlaces y recursos.
+    ```html
+    <a th:href="@{/usuarios/{id}(id=${usuario.id})}">Ver</a>
+    <img th:src="@{/images/logo.png}" />
+    ```
+- **th:object / th:field**: Formularios vinculados a objetos.
+    ```html
+    <form th:object="${usuario}" th:action="@{/usuarios}" method="post">
+            <input th:field="*{nombre}" />
+    </form>
+    ```
+- **th:value**: Valor de campos.
+    ```html
+    <input th:value="${usuario.email}" />
+    ```
+- **th:attr**: Atributos personalizados.
+    ```html
+    <input th:attr="placeholder=${usuario.nombre}" />
+    ```
+- **th:replace / th:include**: Fragmentos y layouts.
+    ```html
+    <div th:replace="fragments/header :: header"></div>
+    ```
+- **th:switch / th:case**: Estructuras de control.
+    ```html
+    <div th:switch="${usuario.rol}">
+            <span th:case="'ADMIN'">Administrador</span>
+            <span th:case="'USER'">Usuario</span>
+    </div>
+    ```
+
+---
+
+## Ejemplo de Formulario y Validación
+
+```html
+<form th:object="${usuario}" th:action="@{/usuarios}" method="post">
+        <input th:field="*{nombre}" placeholder="Nombre" />
+        <span th:if="${#fields.hasErrors('nombre')}" th:errors="*{nombre}"></span>
+        <input th:field="*{email}" placeholder="Email" />
+        <span th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></span>
+        <button type="submit">Guardar</button>
+</form>
+```
+
+En el controlador:
+
+```java
+@PostMapping("/usuarios")
+public String guardarUsuario(@Valid @ModelAttribute Usuario usuario, BindingResult result) {
+        if (result.hasErrors()) {
+                return "formulario-usuario";
+        }
+        // Guardar usuario
+        return "redirect:/usuarios";
+}
+```
+
+---
+
+## Fragmentos y Layouts
+
+Thymeleaf permite reutilizar partes de la vista mediante fragmentos:
+
+```html
+<!-- fragments/header.html -->
+<div th:fragment="header">
+        <h1>Mi Aplicación</h1>
+</div>
+```
+
+En la plantilla principal:
+
+```html
+<div th:replace="fragments/header :: header"></div>
+```
+
+---
+
+## Internacionalización (i18n)
+
+Configura archivos de mensajes en `src/main/resources/messages.properties`:
+
+```properties
+label.nombre=Nombre
+label.email=Correo electrónico
+```
+
+En la vista:
+
+```html
+<label th:text="#{label.nombre}"></label>
+```
+
+---
+
+## Buenas Prácticas
+
+- Utiliza fragmentos para layouts reutilizables.
+- Escapa siempre el texto con `th:text` para evitar XSS.
+- Valida los datos en el backend y muestra errores en la vista.
+- Mantén la lógica de negocio fuera de las plantillas.
+- Usa internacionalización para soportar múltiples idiomas.
+
+---
+
+¿Dudas o quieres ejemplos específicos? ¡Solicítalos!
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-thymeleaf</artifactId>
     </dependency>
