@@ -1,248 +1,144 @@
-# Guía Completa -- Arquitecturas Limpias y Orientadas a Servicios en Java con Spring
+# Guía Profesional: Arquitecturas Limpias, Hexagonales, Microservicios y DDD en Java con Spring
 
-## 1. Introducción
+## Introducción
 
-En los proyectos con **Java SE**, hemos trabajado con arquitecturas
-básicas como **MVC** y **por capas**, separando responsabilidades para
-mantener el código organizado.\
-Ahora que avanzamos hacia **Spring Framework y Spring Boot**, es momento
-de comprender **arquitecturas limpias y orientadas a servicios**,
-ampliamente utilizadas en el desarrollo de aplicaciones empresariales y
-microservicios.
-
-------------------------------------------------------------------------
-
-## 2. De la arquitectura por capas a la arquitectura limpia
-
-### 2.1 Arquitectura por capas (recapitulación)
-
-Es el modelo clásico usado en proyectos Java SE:
-
-    com.mycompany.academico
-     ├─ domain/           → Clases del modelo o entidades
-     ├─ repository/       → Acceso a datos (DAO o Repositorios)
-     ├─ service/          → Lógica de negocio
-     └─ ui/console        → Interfaz de usuario o controladores
-
-### Ventajas
-
--   Separación clara de responsabilidades.\
--   Reutilización del código.\
--   Mantenimiento sencillo.
-
-### Limitaciones
-
--   Alta dependencia entre capas.\
--   Difícil de probar de manera aislada.\
--   No está pensada para escalar hacia microservicios.
-
-------------------------------------------------------------------------
-
-## 3. Arquitectura MVC (Model-View-Controller)
-
-**MVC (Modelo-Vista-Controlador)** se centra en cómo interactúan la
-interfaz y la lógica del sistema.
-
--   **Modelo:** Entidades o clases que representan datos.\
--   **Vista:** La interfaz de usuario (HTML, JSP, Thymeleaf, etc.).\
--   **Controlador:** Recibe las peticiones del usuario y delega en los
-    servicios.
-
-```{=html}
-<!-- -->
-```
-    Usuario (vista) → Controlador → Servicio → Repositorio → Base de datos
-
-**En Spring Boot**, MVC se implementa con: - `@Controller` o
-`@RestController` - `@Service` - `@Repository` - `@Entity`
-
-------------------------------------------------------------------------
-
-## 4. Hacia una arquitectura limpia
-
-La **arquitectura limpia (Clean Architecture)** propuesta por Robert C.
-Martin (Uncle Bob) busca **independencia total entre las capas** del
-sistema.
-
-Su principio básico es:\
-\> "El código del negocio no debe depender de frameworks, bases de
-datos, ni detalles externos."
-
-### 4.1 Estructura típica
-
-    com.company.proyecto
-     ├─ domain/                → Entidades y lógica de negocio pura
-     ├─ application/           → Casos de uso (servicios o reglas de aplicación)
-     ├─ infrastructure/        → Adaptadores de frameworks, persistencia, APIs externas
-     └─ entrypoints/           → Interfaces de entrada (REST Controllers, CLI, etc.)
-
-### 4.2 Flujo de dependencias
-
-    Entrypoint → Application → Domain ← Infrastructure
-
-Las dependencias **solo apuntan hacia adentro**, nunca al revés.
-
-------------------------------------------------------------------------
-
-## 5. Principios clave
-
-  -----------------------------------------------------------------------
-  Principio                          Descripción
-  ---------------------------------- ------------------------------------
-  **Independencia del Framework**    Spring es una herramienta, no una
-                                     dependencia del dominio.
-
-  **Independencia de la UI**         La capa de presentación puede
-                                     cambiar sin alterar la lógica.
-
-  **Independencia de la base de      Puedes cambiar de MySQL a PostgreSQL
-  datos**                            sin romper la lógica del negocio.
-
-  **Pruebas fáciles**                Cada componente se puede probar por
-                                     separado.
-  -----------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-# Guía Avanzada — Hexagonal, Microservicios y DDD con Java + Spring
-
-> **Objetivo**: profundizar en tres enfoques clave para construir sistemas robustos con Spring Boot: **Arquitectura Hexagonal (Ports & Adapters)**, **Microservicios** y **Domain-Driven Design (DDD)**. Incluye principios, estructuras de paquetes, patrones, ejemplos y recomendaciones prácticas para equipos que migran desde Java SE (capas/MVC) hacia servicios empresariales.
+Las arquitecturas modernas en Java y Spring Boot permiten construir sistemas robustos, escalables y mantenibles. Esta guía cubre desde la evolución de las arquitecturas por capas y MVC, hasta Clean Architecture, Hexagonal, Microservicios y Domain-Driven Design (DDD), con teoría, diagramas, ejemplos y buenas prácticas.
 
 ---
 
-## 1) Arquitectura Hexagonal (Ports & Adapters)
+## 1. Evolución: Capas y MVC
 
-### 1.1. Idea central
-Separar el **núcleo de negocio** (dominio + casos de uso) de los **detalles externos** (web, base de datos, mensajería, archivos, etc.).  
-Todo lo que “conecta” con el mundo exterior lo hacemos mediante **puertos** (interfaces) y **adaptadores** (implementaciones).
-
-### 1.2. Capas y dependencias
+### Arquitectura por capas
+Separación clásica en proyectos Java SE:
 ```
-                  ┌───────────────────────────┐
-                  │   Entradas (Driving)      │  ← adaptadores de entrada
-                  │ REST, CLI, Schedulers     │
-                  └─────────────┬─────────────┘
-                                │ llama casos de uso
-                        ┌───────▼────────┐
-                        │  Aplicación    │  ← casos de uso / application services
-                        └───────┬────────┘
-                                │ usa puertos
-                        ┌───────▼────────┐
-                        │   Dominio      │  ← entidades, agregados, reglas
-                        └───────┬────────┘
-                                │ define puertos de salida
-                  ┌─────────────▼─────────────┐
-                  │  Salidas (Driven)         │  ← adaptadores de salida
-                  │  JPA, Kafka, Email, etc.  │
-                  └────────────────────────────┘
+com.mycompany.academico
+ ├─ domain/           → Entidades
+ ├─ repository/       → Acceso a datos
+ ├─ service/          → Lógica de negocio
+ └─ ui/console        → Interfaz/controladores
 ```
-- **Entradas (Driving Adapters)**: controladores REST, endpoints, CLI, eventos entrantes.  
-- **Aplicación (Use Cases)**: orquesta reglas (sin depender de frameworks).  
-- **Dominio**: entidades, value objects, servicios de dominio, **sin dependencias** a Spring ni a infraestructura.  
-- **Salidas (Driven Adapters)**: persistencia, brokers de mensajes, APIs externas.
+**Ventajas:** claridad, reutilización, mantenimiento.
+**Limitaciones:** dependencias rígidas, difícil de probar, poco escalable.
 
-### 1.3. Paquetes recomendados
+### MVC (Model-View-Controller)
+Modelo: datos y entidades.
+Vista: interfaz (HTML, JSP, Thymeleaf).
+Controlador: recibe peticiones y delega en servicios.
+En Spring Boot: `@Controller`, `@RestController`, `@Service`, `@Repository`, `@Entity`.
+
+---
+
+
+## 2. Arquitectura Limpia (Clean Architecture)
+
+Propuesta por Robert C. Martin (Uncle Bob): independencia total entre capas. El dominio no depende de frameworks, bases de datos ni detalles externos.
+
+### Estructura típica
+```
+com.company.proyecto
+ ├─ domain/                → Entidades y lógica de negocio pura
+ ├─ application/           → Casos de uso
+ ├─ infrastructure/        → Adaptadores de frameworks, persistencia, APIs externas
+ └─ entrypoints/           → Interfaces de entrada (REST, CLI, etc.)
+```
+**Flujo de dependencias:**
+Entrypoint → Application → Domain ← Infrastructure
+Las dependencias solo apuntan hacia adentro.
+
+### Principios clave
+- Independencia del framework y la UI.
+- Independencia de la base de datos.
+- Pruebas fáciles y aisladas.
+
+---
+
+------------------------------------------------------------------------
+
+
+## 3. Arquitectura Hexagonal (Ports & Adapters)
+
+Separar el núcleo de negocio de los detalles externos mediante puertos (interfaces) y adaptadores (implementaciones).
+
+### Diagrama
+```
+┌───────────────────────────┐
+│   Entradas (Driving)      │
+│ REST, CLI, Schedulers     │
+└─────────────┬─────────────┘
+        │ llama casos de uso
+ ┌───────▼────────┐
+ │  Aplicación    │
+ └───────┬────────┘
+        │ usa puertos
+ ┌───────▼────────┐
+ │   Dominio      │
+ └───────┬────────┘
+        │ define puertos de salida
+┌─────────────▼─────────────┐
+│  Salidas (Driven)         │
+│  JPA, Kafka, Email, etc.  │
+└────────────────────────────┘
+```
+
+### Paquetes recomendados
 ```
 com.company.proyecto
 ├─ domain
-│  ├─ model/               # Entidades, Value Objects, Agregados
-│  ├─ service/             # Servicios de dominio (lógica pura)
-│  └─ spi/                 # Puertos de salida (interfaces): repositorios, brokers
+│  ├─ model/               # Entidades, Value Objects
+│  ├─ service/             # Servicios de dominio
+│  └─ spi/                 # Puertos de salida (interfaces)
 ├─ application
-│  ├─ usecase/             # Casos de uso (Application Services)
-│  └─ dto/                 # DTOs de entrada/salida de casos de uso (opcional)
+│  ├─ usecase/             # Casos de uso
+│  └─ dto/                 # DTOs
 ├─ infrastructure
-│  ├─ persistence/         # Adaptadores de salida (JPA, JDBC, Mongo, etc.)
-│  ├─ messaging/           # Kafka/Rabbit adapters, outbox
-│  ├─ restclient/          # Adaptadores para APIs externas
-│  └─ config/              # @Configuration, wiring de beans
+│  ├─ persistence/         # Adaptadores JPA/JDBC
+│  ├─ messaging/           # Kafka/Rabbit
+│  ├─ restclient/          # APIs externas
+│  └─ config/              # Beans
 └─ entrypoints
-   ├─ rest/                # Controladores REST (@RestController)
-   └─ scheduler/           # Jobs/Task Schedulers
+   ├─ rest/                # Controladores REST
+   └─ scheduler/           # Jobs
 ```
 
-> *`spi`* (Service Provider Interface): define **qué** necesita el dominio (puertos de salida). Las implementaciones viven en `infrastructure`.
-
-### 1.4. Ejemplo (extractos)
-
-**Dominio: entidad + puerto de salida**
+### Ejemplo
+**Dominio:**
 ```java
-// domain/model/Estudiante.java
 public class Estudiante {
     private final String id;
     private String nombre;
-
-    public Estudiante(String id, String nombre) {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id requerido");
-        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("nombre requerido");
-        this.id = id;
-        this.nombre = nombre;
-    }
-    // getters, invariantes, reglas de negocio
+    // ... reglas de negocio
 }
-
-// domain/spi/EstudianteRepositoryPort.java
 public interface EstudianteRepositoryPort {
     Estudiante save(Estudiante e);
     Optional<Estudiante> findById(String id);
     boolean existsByNombre(String nombre);
 }
 ```
-
-**Aplicación: caso de uso (no depende de Spring)**
+**Aplicación:**
 ```java
-// application/usecase/CrearEstudianteUseCase.java
 public class CrearEstudianteUseCase {
     private final EstudianteRepositoryPort repo;
-
     public CrearEstudianteUseCase(EstudianteRepositoryPort repo) { this.repo = repo; }
-
     public Estudiante execute(String id, String nombre) {
-        Estudiante e = new Estudiante(id, nombre);
-        if (repo.existsByNombre(nombre)) throw new IllegalArgumentException("duplicado");
-        return repo.save(e);
+        // ... lógica
+        return repo.save(new Estudiante(id, nombre));
     }
 }
 ```
-
-**Infraestructura: adaptador JPA que implementa el puerto**
+**Infraestructura:**
 ```java
-// infrastructure/persistence/jpa/JpaEstudianteRepositoryAdapter.java
 @Repository
 class JpaEstudianteRepositoryAdapter implements EstudianteRepositoryPort {
-    private final SpringDataEstudianteJpa jpa; // interface extiende JpaRepository<...>
-
-    JpaEstudianteRepositoryAdapter(SpringDataEstudianteJpa jpa) { this.jpa = jpa; }
-
-    @Override
-    public Estudiante save(Estudiante e) {
-        EstudianteEntity entity = EstudianteEntity.fromDomain(e);
-        EstudianteEntity saved = jpa.save(entity);
-        return saved.toDomain();
-    }
-
-    @Override
-    public Optional<Estudiante> findById(String id) {
-        return jpa.findById(id).map(EstudianteEntity::toDomain);
-    }
-
-    @Override
-    public boolean existsByNombre(String nombre) { return jpa.existsByNombre(nombre); }
+    // ... implementación JPA
 }
 ```
-
-**Entrypoint: controlador REST**
+**Entrypoint:**
 ```java
-// entrypoints/rest/EstudianteController.java
 @RestController
 @RequestMapping("/api/estudiantes")
 public class EstudianteController {
     private final CrearEstudianteUseCase crear;
-
-    public EstudianteController(CrearEstudianteUseCase crear) {
-        this.crear = crear;
-    }
-
+    public EstudianteController(CrearEstudianteUseCase crear) { this.crear = crear; }
     @PostMapping
     public ResponseEntity<?> crear(@RequestParam String id, @RequestParam String nombre) {
         return ResponseEntity.ok(crear.execute(id, nombre));
@@ -250,28 +146,14 @@ public class EstudianteController {
 }
 ```
 
-**Wiring (configuración manual para mantener independencia)**
-```java
-// infrastructure/config/BeanConfig.java
-@Configuration
-public class BeanConfig {
-    @Bean
-    public CrearEstudianteUseCase crearEstudianteUseCase(EstudianteRepositoryPort repo) {
-        return new CrearEstudianteUseCase(repo);
-    }
-}
-```
+### Buenas prácticas
+- El dominio no debe importar clases de Spring ni JPA.
+- Define puertos en dominio, implementa en infraestructura.
+- Casos de uso orquestan reglas y dependencias.
+- Usa mappers para aislar modelos.
+- Testing: pruebas puras en dominio, mocks en use cases, integración en adaptadores, @WebMvcTest en entrypoints.
 
-### 1.5. Buenas prácticas
-- El **dominio** no debe importar clases de Spring ni JPA.  
-- Define **puertos** (interfaces) en dominio; implementa en infraestructura.  
-- Casos de uso **orquestan** reglas y dependencias.  
-- Usa **mappers** (entity ↔ domain) para aislar modelos.  
-- Testing:  
-  - Dominio: pruebas puras (sin Spring).  
-  - Use Cases: mocks de puertos (unit test).  
-  - Adaptadores: pruebas de integración (@DataJpaTest).  
-  - Entrypoints: @WebMvcTest / TestRestTemplate.
+---
 
 ---
 

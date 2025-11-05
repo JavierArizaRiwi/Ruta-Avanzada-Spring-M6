@@ -1,28 +1,40 @@
-# Guía paso a paso: Crear imagen Docker y desplegar con Docker Compose
+build:
+up:
+down:
+logs:
+ps:
 
-Esta guía explica cómo construir una **imagen Docker** de una aplicación Java Spring Boot (JDK 17 y Maven) y cómo desplegarla usando **Docker Compose**.
+# Guía Profesional: Dockerfile y Despliegue de Aplicaciones Spring Boot
+
+Esta guía explica cómo crear, optimizar y desplegar imágenes Docker para aplicaciones Java Spring Boot, incluyendo buenas prácticas, ejemplos, recomendaciones y automatización con Docker Compose y Makefile.
 
 ---
 
-## 0) Estructura mínima del proyecto
+## 1. Conceptos Clave de Docker
+
+- **Imagen:** Paquete inmutable con todo lo necesario para ejecutar una app.
+- **Contenedor:** Instancia aislada de una imagen en ejecución.
+- **Dockerfile:** Script para construir imágenes personalizadas.
+- **Docker Compose:** Orquestador para definir y ejecutar múltiples contenedores.
+
+---
+
+## 2. Estructura Recomendada del Proyecto
 
 ```
-/tu-proyecto
+/mi-proyecto
 ├─ pom.xml
 ├─ src/
 │  └─ main/...
-└─ Dockerfile
+├─ Dockerfile
+├─ docker-compose.yml
+└─ .dockerignore
 ```
 
-### Archivo opcional `.dockerignore`
-
-Crea un archivo `.dockerignore` para acelerar los builds y evitar archivos innecesarios:
-
+### Ejemplo de `.dockerignore`
 ```
 target/
 .git/
-.gitignore
-.github/
 .idea/
 *.iml
 *.log
@@ -31,241 +43,123 @@ target/
 
 ---
 
-## 1) Configuración del `pom.xml`
-
-Ejemplo completo del archivo de configuración Maven para tu aplicación:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-	<modelVersion>4.0.0</modelVersion>
-
-	<parent>
-		<groupId>org.springframework.boot</groupId>
-		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.5.6</version>
-		<relativePath/>
-	</parent>
-
-	<groupId>com.riwitienda</groupId>
-	<artifactId>pagos</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<name>pagos</name>
-	<description>Demo project for Spring Boot</description>
-
-    <properties>
-        <java.version>17</java.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
-	<dependencies>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-security</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-web</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-devtools</artifactId>
-			<scope>runtime</scope>
-			<optional>true</optional>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.security</groupId>
-			<artifactId>spring-security-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-	</dependencies>
-
-    <build>
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <excludes>
-                    <exclude>application.properties</exclude>
-                </excludes>
-            </resource>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>false</filtering>
-                <includes>
-                    <include>application.properties</include>
-                </includes>
-            </resource>
-        </resources>
-
-        <plugins>
-            <plugin>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-                <configuration>
-                    <encoding>UTF-8</encoding>
-                </configuration>
-            </plugin>
-
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-```
-
----
-
-## 2) Dockerfile (multi-stage)
-
-Guarda el siguiente archivo como `Dockerfile` en la raíz del proyecto:
+## 3. Dockerfile Óptimo para Spring Boot
 
 ```dockerfile
-# Etapa 1: Construcción con Maven y JDK 17
+# Etapa 1: Build con Maven y JDK 17
 FROM maven:3.9.0-eclipse-temurin-17 AS build
-
 WORKDIR /app
-
-# Copiamos el pom.xml para aprovechar el cache de dependencias
 COPY pom.xml .
-
-# Descargamos las dependencias para que quede en caché
 RUN mvn dependency:go-offline
-
-# Copiamos el código fuente
 COPY src ./src
-
-# Construimos el paquete (saltamos los tests para agilizar)
 RUN mvn clean package -DskipTests
 
-# Etapa 2: Imagen final con JRE Temurin 17 Alpine (más ligera)
+# Etapa 2: Imagen final ligera
 FROM eclipse-temurin:17-jre-alpine
-
 WORKDIR /app
-
-# Copiamos el jar construido desde la etapa de build
 COPY --from=build /app/target/*.jar app.jar
-
-# Exponemos el puerto 8080 (por defecto de Spring Boot)
 EXPOSE 8080
-
-# Comando para ejecutar la aplicación
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
----
-
-## 3) Construcción y ejecución de la imagen
-
-```bash
-# Construir la imagen
-docker build -t pagos:1.0.0 .
-
-# Ejecutar el contenedor
-docker run --rm -p 8080:8080 --name pagos pagos:1.0.0
-```
+**Buenas prácticas:**
+- Usa multi-stage para imágenes pequeñas y seguras.
+- Expón solo los puertos necesarios.
+- No incluyas credenciales ni archivos sensibles.
 
 ---
 
-## 4) Docker Compose (solo la aplicación)
-
-```yaml
-services:
-  pagos:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: pagos:1.0.0
-    container_name: pagos
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-    restart: unless-stopped
-```
-
-Comando para levantar:
-```bash
-docker compose up -d --build
-docker compose logs -f pagos
-```
-
----
-
-## 5) Docker Compose con base de datos H2
-
-```yaml
-services:
-  pagos:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: pagos:1.0.0
-    container_name: pagos
-    ports:
-      - "8080:8080"
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:h2:mem:testdb
-      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.h2.Driver
-      SPRING_DATASOURCE_USERNAME: sa
-      SPRING_DATASOURCE_PASSWORD: password
-    restart: unless-stopped
-```
-
----
-
-## 6) Makefile (opcional)
+## 4. Automatización con Makefile
 
 ```makefile
-APP_IMAGE?=pagos:1.0.0
-
+APP_IMAGE?=miapp:1.0.0
 build:
 	docker build -t $(APP_IMAGE) .
-
 up:
 	docker compose up -d --build
-
 down:
 	docker compose down
-
 logs:
-	docker compose logs -f pagos
-
+	docker compose logs -f miapp
 ps:
 	docker compose ps
 ```
 
 ---
 
-## 7) Comandos principales
+## 5. Ejemplo de `docker-compose.yml`
 
-| Acción | Comando |
-|--------|----------|
-| Construir imagen | `docker build -t pagos:1.0.0 .` |
-| Levantar contenedor | `docker compose up -d --build` |
-| Ver logs | `docker compose logs -f pagos` |
-| Apagar servicios | `docker compose down` |
+```yaml
+version: '3.8'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: miapp:1.0.0
+    container_name: miapp
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    restart: unless-stopped
+```
+
+**Con base de datos H2:**
+```yaml
+services:
+  app:
+    ... # igual que arriba
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:h2:mem:testdb
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.h2.Driver
+      SPRING_DATASOURCE_USERNAME: sa
+      SPRING_DATASOURCE_PASSWORD: password
+```
+
+---
+
+## 6. Comandos Esenciales
+
+| Acción                | Comando                                 |
+|---------------------- |-----------------------------------------|
+| Construir imagen      | `docker build -t miapp:1.0.0 .`         |
+| Levantar contenedor   | `docker compose up -d --build`          |
+| Ver logs              | `docker compose logs -f miapp`          |
+| Apagar servicios      | `docker compose down`                   |
+
+---
+
+## 7. Checklist y Recomendaciones
+
+- [x] Usa multi-stage en Dockerfile.
+- [x] Define variables de entorno en Compose.
+- [x] Excluye archivos innecesarios con `.dockerignore`.
+- [x] Automatiza con Makefile.
+- [x] Versiona tus imágenes.
+- [x] Prueba local antes de subir a producción.
+
+**Recomendaciones:**
+- Mantén tu Dockerfile simple y explícito.
+- Usa imágenes oficiales y actualizadas.
+- Revisa los logs y el estado de los contenedores.
+- Documenta los comandos y configuraciones.
+
+---
+
+## 8. Preguntas Frecuentes (FAQ)
+
+**¿Por qué usar multi-stage?**
+Reduce el tamaño y mejora la seguridad de la imagen.
+
+**¿Cómo depurar errores de build?**
+Revisa los logs, verifica rutas y dependencias.
+
+**¿Cómo agregar una base de datos externa?**
+Agrega otro servicio en `docker-compose.yml` (ejemplo: PostgreSQL, MySQL).
 
 ---
 
 **Autor:** Javier Ariza  
-**Versión:** 1.0  
-**Descripción:** Guía práctica para construir imágenes Docker de aplicaciones Spring Boot y desplegarlas con Docker Compose.
+**Versión:** 2.0  
+**Descripción:** Guía profesional para crear, optimizar y desplegar imágenes Docker de aplicaciones Spring Boot.
