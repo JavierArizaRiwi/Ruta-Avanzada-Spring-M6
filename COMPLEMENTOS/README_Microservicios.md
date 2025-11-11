@@ -1,181 +1,236 @@
-# Guía: Plataforma Educativa con Microservicios + Arquitectura Hexagonal + Docker Compose (sin seguridad por ahora)
 
-> Objetivo: mostrar a los aprendices cómo estructurar un sistema educativo realista usando **microservicios**, aplicando **arquitectura hexagonal** y orquestando todo con **docker-compose**, sin meter autenticación todavía para no distraer del modelo de servicios.
+# Guía Profesional y Funcional: Microservicios con Spring Boot, Node.js y Docker Compose
 
----
-
-## 1. Contexto del escenario
-
-Imagina que tu programa de formación (rutas, módulos, HU, pruebas de desempeño) quiere exponer sus datos para que un frontend (Angular, React o incluso Postman) pueda:
-
-- Listar cursos/módulos activos.
-- Registrar entregas de los coders.
-- Consultar el estado de las entregas.
-- (Opcional) disparar notificaciones cuando alguien entrega.
-
-En lugar de hacer **un monolito**, lo dividimos en **varios microservicios**, cada uno con una responsabilidad clara y con su propio modelo de datos.
+> **Propósito:** Esta guía te lleva paso a paso, con comentarios y explicaciones, para crear dos microservicios interoperables (Java y Node.js), orquestados con Docker Compose y conectados a MySQL. Ideal para principiantes y para enseñar en clase.
 
 ---
 
-## 2. Microservicios propuestos
+## 1. Requisitos Previos
 
-Vamos a usar 4 servicios básicos:
-
-1. **api-gateway**  
-   - Punto único de entrada.  
-   - Solo enruta peticiones a los demás servicios.  
-   - No tiene seguridad todavía.
-
-2. **catalog-service**  
-   - Administra **rutas, módulos y cursos**.  
-   - Ejemplo: “Módulo 5 – Persistencia”, “Módulo 6 – Frameworks”, “Ruta Java + Spring”.
-
-3. **lms-service**  
-   - Administra **entregas, evaluaciones y estados** de los coders.  
-   - Ejemplo: registrar que Javier entregó la HU de Semana 2.
-
-4. **notification-service**  
-   - Se encarga de procesar mensajes y “notificar”.  
-   - Para ambiente educativo basta con que haga `println("notificación enviada")`.
-
-Además, tendremos una **base de datos** compartida o varias, según lo quieras enseñar.
+- Docker y Docker Compose instalados ([descarga aquí](https://docs.docker.com/get-docker/)).
+- Java 17+ y Maven ([descarga aquí](https://adoptium.net/)).
+- Node.js v16+ ([descarga aquí](https://nodejs.org/)).
+- Postman o curl para pruebas.
 
 ---
 
-## 3. Por qué arquitectura hexagonal aquí
-
-La arquitectura hexagonal (puertos y adaptadores) nos ayuda a que:
-
-- El **dominio** (reglas de negocio) no dependa de Spring, ni de MySQL, ni de HTTP.
-- Podamos cambiar el adaptador de persistencia (MySQL → Postgres) sin tocar el dominio.
-- Podamos tener varios “drivers”: REST, eventos, línea de comandos.
-
-La forma general de un servicio con hexagonal:
+## 2. Estructura del Proyecto
 
 ```text
-/catalog-service
-  /domain
-    Curso.java
-    Modulo.java
-    CursoService.java
-    ports/
-      CursoRepositoryPort.java
-  /application
-    ListarCursosActivosUseCase.java
-    CrearCursoUseCase.java
-  /infrastructure
-    /rest
-      CursoController.java
-    /persistence
-      CursoJpaEntity.java
-      SpringDataCursoRepository.java
-      CursoJpaAdapter.java   <-- IMPLEMENTA el puerto
-  Application.java
+micro-edtech/
+  catalog-service/        # Microservicio Java Spring Boot
+  lms-service/            # Microservicio Node.js Express
+  docker-compose.yml      # Orquestador de servicios
 ```
 
-- **domain**: lo que la escuela hace.
-- **application**: casos de uso concretos.
-- **infrastructure**: todo lo que depende de frameworks.
+---
+
+## 3. Microservicio 1: catalog-service (Spring Boot)
+
+### 3.1. Crear el proyecto
+Usa [Spring Initializr](https://start.spring.io) con:
+- Spring Web
+- Spring Data JPA
+- MySQL Driver
+- Lombok (opcional)
+Nombre: `catalog-service`  
+Group: `com.edtech`  
+Package: `com.edtech.catalog`
+
+Descomprime el zip en `micro-edtech/catalog-service`.
+
+### 3.2. Dominio y arquitectura hexagonal
+**Dominio:**
+```java
+// src/main/java/com/edtech/catalog/domain/Curso.java
+package com.edtech.catalog.domain;
+
+public class Curso {
+    private Long id;
+    private String nombre;
+    private String estado; // ACTIVO / INACTIVO
+
+    public Curso(Long id, String nombre, String estado) {
+        this.id = id;
+        this.nombre = nombre;
+        this.estado = estado;
+    }
+
+    // Getters
+    public Long getId() { return id; }
+    public String getNombre() { return nombre; }
+    public String getEstado() { return estado; }
+}
+```
+
+**Puerto del dominio:**
+```java
+// src/main/java/com/edtech/catalog/domain/CursoRepositoryPort.java
+package com.edtech.catalog.domain;
+
+import java.util.List;
+
+public interface CursoRepositoryPort {
+    List<Curso> listarCursos();
+}
+```
+
+**Caso de uso:**
+```java
+// src/main/java/com/edtech/catalog/application/ListarCursosService.java
+package com.edtech.catalog.application;
+
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import java.util.List;
+
+public class ListarCursosService {
+    private final CursoRepositoryPort repository;
+    public ListarCursosService(CursoRepositoryPort repository) {
+        this.repository = repository;
+    }
+    public List<Curso> ejecutar() {
+        return repository.listarCursos();
+    }
+}
+```
+
+**Adaptador en memoria:**
+```java
+// src/main/java/com/edtech/catalog/infrastructure/InMemoryCursoAdapter.java
+package com.edtech.catalog.infrastructure;
+
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.stereotype.Component;
+import java.util.List;
+
+@Component
+public class InMemoryCursoAdapter implements CursoRepositoryPort {
+    @Override
+    public List<Curso> listarCursos() {
+        return List.of(
+            new Curso(1L, "Módulo 5 - Persistencia", "ACTIVO"),
+            new Curso(2L, "Módulo 6 - Frameworks", "ACTIVO")
+        );
+    }
+}
+```
+
+**Controlador REST:**
+```java
+// src/main/java/com/edtech/catalog/infrastructure/rest/CursoController.java
+package com.edtech.catalog.infrastructure.rest;
+
+import com.edtech.catalog.application.ListarCursosService;
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
+
+@RestController
+public class CursoController {
+    private final ListarCursosService listarCursosService;
+    public CursoController(CursoRepositoryPort repositoryPort) {
+        this.listarCursosService = new ListarCursosService(repositoryPort);
+    }
+    @GetMapping("/cursos")
+    public List<Curso> listar() {
+        return listarCursosService.ejecutar();
+    }
+}
+```
+
+**Dockerfile:**
+```dockerfile
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
 
 ---
 
-## 4. Diseño funcional
+## 4. Microservicio 2: lms-service (Node.js)
 
-### 4.1. Funcionalidades mínimas por servicio
-
-**catalog-service**
-- `GET /cursos` → lista todos los cursos.
-- `GET /cursos/activos` → lista los activos.
-- `POST /cursos` → crea un curso (por ahora sin seguridad).
-- `GET /modulos?cursoId=...` → lista los módulos de un curso.
-
-**lms-service**
-- `POST /entregas` → registrar entrega de HU / prueba.
-- `GET /entregas?coderId=...` → consultar lo entregado por un coder.
-- `GET /estadisticas` → opcional para mostrar al mentor.
-
-**notification-service**
-- Podría exponer `POST /notify` para probarlo.
-- O escuchar de una cola (RabbitMQ) cuando lms-service publica un evento.
-
-**api-gateway**
-- `GET /catalog/**` → redirige a catalog-service.
-- `GET /lms/**` → redirige a lms-service.
-- Esto puede ser un Spring Cloud Gateway, Traefik o Nginx simple.
-
----
-
-## 5. docker-compose como orquestador
-
-La idea es que los coders corran **todo** con un solo comando:
-
+### 4.1. Crear el proyecto
 ```bash
-docker-compose up -d
+mkdir lms-service
+cd lms-service
+npm init -y
+npm install express
 ```
 
-y ya tengan:
+### 4.2. Código del servicio
+```javascript
+// lms-service/index.js
+const express = require('express');
+const app = express();
+app.use(express.json());
 
-- BD
-- gateway
-- services
-- cola de mensajería (opcional)
+const entregas = [];
 
-### 5.1. Archivo `docker-compose.yml` de ejemplo
+// Endpoint para crear una entrega
+app.post('/entregas', (req, res) => {
+  const entrega = {
+    id: entregas.length + 1,
+    coderId: req.body.coderId,
+    moduloId: req.body.moduloId,
+    descripcion: req.body.descripcion
+  };
+  entregas.push(entrega);
+  res.status(201).json(entrega);
+});
 
+// Endpoint para listar entregas
+app.get('/entregas', (req, res) => {
+  res.json(entregas);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`lms-service escuchando en puerto ${PORT}`);
+});
+```
+
+**Dockerfile:**
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
+
+---
+
+## 5. Orquestación con docker-compose.yml
+
+En la raíz `micro-edtech/` crea el archivo:
 ```yaml
 version: '3.8'
-
 services:
-  api-gateway:
-    image: mi-org/api-gateway:latest
-    container_name: api-gateway
-    ports:
-      - "8080:8080"
-    depends_on:
-      - catalog-service
-      - lms-service
-    environment:
-      - CATALOG_SERVICE_URL=http://catalog-service:8082
-      - LMS_SERVICE_URL=http://lms-service:8083
-
   catalog-service:
-    image: mi-org/catalog-service:latest
+    build: ./catalog-service
     container_name: catalog-service
     ports:
-      - "8082:8082"
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/catalogdb
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=root
-    depends_on:
-      - mysql
+      - "8080:8080"
 
   lms-service:
-    image: mi-org/lms-service:latest
+    build: ./lms-service
     container_name: lms-service
     ports:
-      - "8083:8083"
-    environment:
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/lmsdb
-      - SPRING_DATASOURCE_USERNAME=root
-      - SPRING_DATASOURCE_PASSWORD=root
-      - RABBITMQ_HOST=rabbitmq
-    depends_on:
-      - mysql
-      - rabbitmq
-
-  notification-service:
-    image: mi-org/notification-service:latest
-    container_name: notification-service
-    depends_on:
-      - rabbitmq
-
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "3000:3000"
 
   mysql:
     image: mysql:8
@@ -186,150 +241,354 @@ services:
       - "3306:3306"
 ```
 
-**Notas para explicar en clase:**
-
-- Todos los servicios están en la **misma red docker** (la crea compose).
-- Por eso pueden llamarse por nombre: `http://catalog-service:8082`.
-- Puedes usar **una BD por microservicio** (catalogdb, lmsdb) o una sola; tener varias refuerza el concepto de **bounded context**.
-- No hay seguridad todavía, así que cualquier Postman puede consumir.
+**Comentarios:**
+- Cada servicio está en su propio contenedor y red interna.
+- Puedes agregar variables de entorno y volúmenes según necesidad.
 
 ---
 
-## 6. Ejemplo de controlador (catalog-service)
+## 6. Levantar y probar los microservicios
+
+### 6.1. Levantar todo
+```bash
+docker-compose up --build
+```
+
+### 6.2. Probar los endpoints
+- Spring Boot: `GET http://localhost:8080/cursos`
+- Node.js: `POST http://localhost:3000/entregas` con JSON:
+  ```json
+  {
+    "coderId": 1,
+    "moduloId": 2,
+    "descripcion": "Mi entrega de prueba"
+  }
+  ```
+
+### 6.3. Verificar comunicación
+- Ambos servicios pueden comunicarse por red interna de Docker.
+- Puedes agregar llamadas HTTP entre servicios usando la URL del servicio (ejemplo: `http://catalog-service:8080/cursos` desde Node).
+
+---
+
+## 7. Checklist y recomendaciones
+
+- [x] Cada microservicio tiene su propio Dockerfile.
+- [x] docker-compose.yml orquesta todos los servicios.
+- [x] Prueba los endpoints con Postman/curl.
+- [x] Documenta cada paso y agrega comentarios en el código.
+- [x] Usa nombres claros y consistentes.
+
+**Recomendaciones:**
+- Mantén los servicios independientes y desacoplados.
+- Usa variables de entorno para configuración sensible.
+- Agrega tests unitarios y de integración.
+- Documenta el flujo de datos y dependencias.
+
+---
+
+## 8. Preguntas Frecuentes (FAQ)
+
+**¿Puedo agregar más servicios?** Sí, solo añade más bloques en docker-compose.yml.
+
+**¿Cómo conecto los servicios a MySQL?** Configura la URL de conexión en cada microservicio usando el nombre del servicio `mysql` como host.
+
+**¿Cómo escalo los servicios?** Usa la opción `scale` en Docker Compose o Kubernetes para producción.
+
+---
+
+**Autor:** Javier Ariza  
+**Versión:** 2.0  
+**Descripción:** Guía profesional, funcional y comentada para crear microservicios interoperables con Spring Boot, Node.js y Docker Compose.
+
+---
+
+## 0. Requisitos previos
+
+- Tener **Docker** y **Docker Compose** instalados.
+- Tener **Java 17** (o el que use tu Spring Boot) y **Maven**.
+- Tener **Node.js** (v16+).
+- Saber usar una terminal (cd, ls, etc.).
+- Postman o curl para probar.
+
+La idea es que al final puedas pararte frente a tus coders y decir: “esto que ven son **dos servicios distintos** escritos en lenguajes distintos, pero orquestados por Docker”.
+
+---
+
+## 1. Estructura del proyecto
+
+Vamos a crear una carpeta de trabajo:
+
+```text
+micro-edtech/
+  catalog-service/        <-- Spring Boot
+  lms-service/            <-- Node.js
+  docker-compose.yml
+```
+
+Trabajaremos dentro de `micro-edtech/`.
+
+---
+
+## 2. Microservicio 1 (Spring Boot): catalog-service
+
+### 2.1. ¿Qué va a hacer?
+Será el servicio que expone **cursos** o **módulos**. Por ahora solo tendrá:
+- `GET /cursos` → devuelve una lista fija (luego la conectamos a MySQL)
+- Arquitectura “tipo hexagonal”: tendremos dominio y adaptador REST claro.
+
+### 2.2. Crear el proyecto
+Puedes crear el proyecto desde https://start.spring.io (Spring Initializr) con estas dependencias:
+
+- Spring Web
+- Spring Data JPA
+- MySQL Driver
+- Lombok (opcional)
+
+Nombre: `catalog-service`  
+Group: `com.edtech`  
+Package: `com.edtech.catalog`
+
+Descarga el zip y mételo dentro de `micro-edtech/catalog-service`.
+
+### 2.3. Dominio sencillo
 
 ```java
-@RestController
-@RequestMapping("/cursos")
-public class CursoController {
+// src/main/java/com/edtech/catalog/domain/Curso.java
+package com.edtech.catalog.domain;
 
-    private final ListarCursosActivosUseCase listarCursosActivosUseCase;
-    private final CrearCursoUseCase crearCursoUseCase;
+public class Curso {
+    private Long id;
+    private String nombre;
+    private String estado; // ACTIVO / INACTIVO
 
-    public CursoController(ListarCursosActivosUseCase listarCursosActivosUseCase,
-                           CrearCursoUseCase crearCursoUseCase) {
-        this.listarCursosActivosUseCase = listarCursosActivosUseCase;
-        this.crearCursoUseCase = crearCursoUseCase;
+    public Curso(Long id, String nombre, String estado) {
+        this.id = id;
+        this.nombre = nombre;
+        this.estado = estado;
     }
 
-    @GetMapping("/activos")
-    public List<CursoDTO> listarActivos() {
-        return listarCursosActivosUseCase.ejecutar();
-    }
-
-    @PostMapping
-    public CursoDTO crear(@RequestBody CrearCursoCommand command) {
-        return crearCursoUseCase.ejecutar(command);
-    }
+    public Long getId() { return id; }
+    public String getNombre() { return nombre; }
+    public String getEstado() { return estado; }
 }
 ```
 
-Esto es el **adaptador de entrada** (driving adapter): traduce HTTP → caso de uso.
-
----
-
-## 7. Ejemplo de puerto + adaptador de persistencia
-
-**Puerto (en el dominio):**
+### 2.4. Puerto del dominio
 
 ```java
+// src/main/java/com/edtech/catalog/domain/CursoRepositoryPort.java
+package com.edtech.catalog.domain;
+
+import java.util.List;
+
 public interface CursoRepositoryPort {
-    Curso guardar(Curso curso);
-    List<Curso> listarActivos();
+    List<Curso> listarCursos();
 }
 ```
 
-**Adaptador (en infraestructura):**
+### 2.5. Servicio de aplicación (caso de uso)
 
 ```java
-@Component
-public class CursoJpaAdapter implements CursoRepositoryPort {
+// src/main/java/com/edtech/catalog/application/ListarCursosService.java
+package com.edtech.catalog.application;
 
-    private final SpringDataCursoRepository repository;
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
 
-    public CursoJpaAdapter(SpringDataCursoRepository repository) {
+import java.util.List;
+
+public class ListarCursosService {
+
+    private final CursoRepositoryPort repository;
+
+    public ListarCursosService(CursoRepositoryPort repository) {
         this.repository = repository;
     }
 
-    @Override
-    public Curso guardar(Curso curso) {
-        CursoEntity entity = CursoEntity.fromDomain(curso);
-        return repository.save(entity).toDomain();
-    }
-
-    @Override
-    public List<Curso> listarActivos() {
-        return repository.findByEstado("ACTIVO")
-                .stream()
-                .map(CursoEntity::toDomain)
-                .toList();
+    public List<Curso> ejecutar() {
+        return repository.listarCursos();
     }
 }
 ```
 
-**Repositorio Spring Data (infra):**
+### 2.6. Adaptador en memoria (para arrancar rápido)
 
 ```java
-public interface SpringDataCursoRepository extends JpaRepository<CursoEntity, Long> {
-    List<CursoEntity> findByEstado(String estado);
+// src/main/java/com/edtech/catalog/infrastructure/InMemoryCursoAdapter.java
+package com.edtech.catalog.infrastructure;
+
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+
+@Component
+public class InMemoryCursoAdapter implements CursoRepositoryPort {
+
+    @Override
+    public List<Curso> listarCursos() {
+        return List.of(
+                new Curso(1L, "Módulo 5 - Persistencia", "ACTIVO"),
+                new Curso(2L, "Módulo 6 - Frameworks", "ACTIVO")
+        );
+    }
 }
 ```
 
-Con esto les queda clarísimo el concepto: **el dominio habla con un puerto, y la infraestructura implementa ese puerto**.
+### 2.7. Controlador REST
+
+```java
+// src/main/java/com/edtech/catalog/infrastructure/rest/CursoController.java
+package com.edtech.catalog.infrastructure.rest;
+
+import com.edtech.catalog.application.ListarCursosService;
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+public class CursoController {
+
+    private final ListarCursosService listarCursosService;
+
+    public CursoController(CursoRepositoryPort repositoryPort) {
+        this.listarCursosService = new ListarCursosService(repositoryPort);
+    }
+
+    @GetMapping("/cursos")
+    public List<Curso> listar() {
+        return listarCursosService.ejecutar();
+    }
+}
+```
+
+### 2.8. Dockerfile para el catalog-service
+
+```dockerfile
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
 
 ---
 
-## 8. Flujo de uso (sin seguridad)
+## 3. Microservicio 2 (Node.js): lms-service
 
-1. Levantas el compose:
-   ```bash
-   docker-compose up -d
-   ```
+### 3.1. Crear el proyecto
 
-2. Desde Postman llamas:
-   ```http
-   GET http://localhost:8080/catalog/cursos/activos
-   ```
-   - El gateway redirige a `catalog-service` en la red docker.
-   - `catalog-service` consulta su BD.
-   - Devuelve lista de cursos.
+```bash
+mkdir lms-service
+cd lms-service
+npm init -y
+npm install express
+```
 
-3. Registras una entrega:
-   ```http
-   POST http://localhost:8080/lms/entregas
-   Content-Type: application/json
+### 3.2. Código del servicio
 
-   {
-     "coderId": "123",
-     "moduloId": "M6",
-     "tipo": "HU",
-     "descripcion": "Entrega HU semana 2"
-   }
-   ```
-   - El gateway enruta a `lms-service`.
-   - `lms-service` guarda en su BD.
-   - Opcional: publica evento a RabbitMQ → `notification-service` lo toma.
+```javascript
+// lms-service/index.js
+const express = require('express');
+const app = express();
+app.use(express.json());
 
-Todo esto sin tokens ni headers especiales.
+const entregas = [];
+
+app.post('/entregas', (req, res) => {
+  const entrega = {
+    id: entregas.length + 1,
+    coderId: req.body.coderId,
+    moduloId: req.body.moduloId,
+    descripcion: req.body.descripcion
+  };
+  entregas.push(entrega);
+  res.status(201).json(entrega);
+});
+
+app.get('/entregas', (req, res) => {
+  res.json(entregas);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`lms-service escuchando en puerto ${PORT}`);
+});
+```
+
+### 3.3. Dockerfile para Node
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
 
 ---
 
-## 9. Qué enseñar con este ejemplo
+## 4. docker-compose.yml
 
-- **Desacoplamiento**: cada microservicio tiene su propio dominio.
-- **Hexagonal**: puertos en el centro, adaptadores en el borde.
-- **Orquestación**: docker-compose levanta todo junto.
-- **Networking en Docker**: se consumen por nombre de servicio.
-- **Evolución**: después se puede agregar seguridad (JWT) sin reescribir los casos de uso.
+En la carpeta raíz `micro-edtech/`:
+
+```yaml
+version: '3.8'
+
+services:
+  catalog-service:
+    build: ./catalog-service
+    container_name: catalog-service
+    ports:
+      - "8080:8080"
+
+  lms-service:
+    build: ./lms-service
+    container_name: lms-service
+    ports:
+      - "3000:3000"
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    ports:
+      - "3306:3306"
+```
+
+Levantar:
+
+```bash
+docker-compose up --build
+```
+
+Probar:
+- `GET http://localhost:8080/cursos`
+- `POST http://localhost:3000/entregas` con un JSON
 
 ---
 
-## 10. Próximos pasos (para otra guía)
+## 5. Qué mostrarle a los estudiantes
 
-- Agregar **Spring Cloud Gateway** real con `routes`.
-- Agregar **seguridad** en el gateway solamente.
-- Separar las bases en volúmenes.
-- Meter observabilidad (Actuator) para que vean los endpoints de salud.
+1. Que son **dos proyectos distintos**.
+2. Que Docker los pone en la misma red.
+3. Que uno está en Java y otro en Node y no pasa nada.
+4. Que luego puedes meter un gateway y seguridad.
 
 ---
 
-Fin de la guía ✅
+Fin ✅
