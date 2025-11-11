@@ -49,36 +49,74 @@ micro-edtech/
 ### 6.1. ¿Por qué?
 Permite que el microservicio Java (Spring Boot) realice peticiones HTTP al microservicio Node.js para interoperar y compartir datos.
 
-### 6.2. Ejemplo usando RestTemplate (Spring Boot <= 2.x)
-Agrega la dependencia en tu `pom.xml`:
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-</dependency>
+
+### 6.2. Adaptador OUT profesional para consumir Node.js desde Java
+
+#### 6.2.1. Puerto de salida (interface)
+Define el contrato en el dominio:
+```java
+// src/main/java/com/edtech/catalog/domain/EntregaServicePort.java
+package com.edtech.catalog.domain;
+
+import java.util.List;
+
+public interface EntregaServicePort {
+  List<?> obtenerEntregas();
+  // Puedes agregar otros métodos para POST, PUT, DELETE, etc.
+}
 ```
 
-Código ejemplo:
+#### 6.2.2. Adaptador OUT (implementación RestConsumer)
+Implementa el puerto en infraestructura:
 ```java
-// src/main/java/com/edtech/catalog/infrastructure/rest/EntregaRestConsumer.java
+// src/main/java/com/edtech/catalog/infrastructure/rest/EntregaRestConsumerAdapter.java
 package com.edtech.catalog.infrastructure.rest;
 
+import com.edtech.catalog.domain.EntregaServicePort;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.ResponseEntity;
 import java.util.List;
 
 @Component
-public class EntregaRestConsumer {
-    private final RestTemplate restTemplate = new RestTemplate();
+public class EntregaRestConsumerAdapter implements EntregaServicePort {
+  private final RestTemplate restTemplate = new RestTemplate();
 
-    public List<?> obtenerEntregas() {
-        String url = "http://lms-service:3000/entregas"; // Usar el nombre del servicio en docker-compose
-        ResponseEntity<List> response = restTemplate.getForEntity(url, List.class);
-        return response.getBody();
-    }
+  @Override
+  public List<?> obtenerEntregas() {
+    String url = "http://lms-service:3000/entregas"; // Usar el nombre del servicio en docker-compose
+    ResponseEntity<List> response = restTemplate.getForEntity(url, List.class);
+    return response.getBody();
+  }
 }
 ```
+
+#### 6.2.3. Uso en el caso de uso o controlador
+Inyecta el adaptador OUT donde lo necesites:
+```java
+// src/main/java/com/edtech/catalog/application/ConsultarEntregasService.java
+package com.edtech.catalog.application;
+
+import com.edtech.catalog.domain.EntregaServicePort;
+import java.util.List;
+
+public class ConsultarEntregasService {
+  private final EntregaServicePort entregaServicePort;
+  public ConsultarEntregasService(EntregaServicePort entregaServicePort) {
+    this.entregaServicePort = entregaServicePort;
+  }
+  public List<?> consultar() {
+    return entregaServicePort.obtenerEntregas();
+  }
+}
+```
+
+**Ventajas:**
+- El dominio no depende de RestTemplate ni de detalles técnicos.
+- Puedes cambiar la implementación del adaptador OUT fácilmente (por ejemplo, usar WebClient, Feign, etc.).
+- Facilita el testing y el desacoplamiento.
+
+---
 
 ### 6.3. Ejemplo usando WebClient (Spring Boot >= 2.x)
 Agrega la dependencia en tu `pom.xml`:
