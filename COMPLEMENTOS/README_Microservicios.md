@@ -28,19 +28,201 @@ micro-edtech/
 
 ## 3. Microservicio 1: catalog-service (Spring Boot)
 
-...existing code...
+
+### 3.2. Dominio y arquitectura hexagonal
+**Dominio:**
+```java
+// src/main/java/com/edtech/catalog/domain/Curso.java
+package com.edtech.catalog.domain;
+
+public class Curso {
+  private Long id;
+  private String nombre;
+  private String estado; // ACTIVO / INACTIVO
+
+  public Curso(Long id, String nombre, String estado) {
+    this.id = id;
+    this.nombre = nombre;
+    this.estado = estado;
+  }
+
+  // Getters
+  public Long getId() { return id; }
+  public String getNombre() { return nombre; }
+  public String getEstado() { return estado; }
+}
+```
+
+**Puerto del dominio:**
+```java
+// src/main/java/com/edtech/catalog/domain/CursoRepositoryPort.java
+package com.edtech.catalog.domain;
+
+import java.util.List;
+
+public interface CursoRepositoryPort {
+  List<Curso> listarCursos();
+}
+```
+
+**Caso de uso:**
+```java
+// src/main/java/com/edtech/catalog/application/ListarCursosService.java
+package com.edtech.catalog.application;
+
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import java.util.List;
+
+public class ListarCursosService {
+  private final CursoRepositoryPort repository;
+  public ListarCursosService(CursoRepositoryPort repository) {
+    this.repository = repository;
+  }
+  public List<Curso> ejecutar() {
+    return repository.listarCursos();
+  }
+}
+```
+
+**Adaptador en memoria:**
+```java
+// src/main/java/com/edtech/catalog/infrastructure/InMemoryCursoAdapter.java
+package com.edtech.catalog.infrastructure;
+
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.stereotype.Component;
+import java.util.List;
+
+@Component
+public class InMemoryCursoAdapter implements CursoRepositoryPort {
+  @Override
+  public List<Curso> listarCursos() {
+    return List.of(
+      new Curso(1L, "Módulo 5 - Persistencia", "ACTIVO"),
+      new Curso(2L, "Módulo 6 - Frameworks", "ACTIVO")
+    );
+  }
+}
+```
+
+**Controlador REST:**
+```java
+// src/main/java/com/edtech/catalog/infrastructure/rest/CursoController.java
+package com.edtech.catalog.infrastructure.rest;
+
+import com.edtech.catalog.application.ListarCursosService;
+import com.edtech.catalog.domain.Curso;
+import com.edtech.catalog.domain.CursoRepositoryPort;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
+
+@RestController
+public class CursoController {
+  private final ListarCursosService listarCursosService;
+  public CursoController(CursoRepositoryPort repositoryPort) {
+    this.listarCursosService = new ListarCursosService(repositoryPort);
+  }
+  @GetMapping("/cursos")
+  public List<Curso> listar() {
+    return listarCursosService.ejecutar();
+  }
+}
+```
+
+**Dockerfile:**
+```dockerfile
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:17-jre
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
 
 ---
 
 ## 4. Microservicio 2: lms-service (Node.js)
 
-...existing code...
+
+### 4.2. Código del servicio Node.js
+```javascript
+// lms-service/index.js
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+const entregas = [];
+
+// Endpoint para crear una entrega
+app.post('/entregas', (req, res) => {
+  const entrega = {
+    id: entregas.length + 1,
+    coderId: req.body.coderId,
+    moduloId: req.body.moduloId,
+    descripcion: req.body.descripcion
+  };
+  entregas.push(entrega);
+  res.status(201).json(entrega);
+});
+
+// Endpoint para listar entregas
+app.get('/entregas', (req, res) => {
+  res.json(entregas);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`lms-service escuchando en puerto ${PORT}`);
+});
+```
+
+**Dockerfile Node.js:**
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "index.js"]
+```
 
 ---
 
 ## 5. Orquestación con docker-compose.yml
 
-...existing code...
+
+```yaml
+version: '3.8'
+services:
+  catalog-service:
+    build: ./catalog-service
+    container_name: catalog-service
+    ports:
+      - "8080:8080"
+
+  lms-service:
+    build: ./lms-service
+    container_name: lms-service
+    ports:
+      - "3000:3000"
+
+  mysql:
+    image: mysql:8
+    container_name: mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    ports:
+      - "3306:3306"
+```
 
 ---
 
@@ -160,19 +342,62 @@ public class EntregaWebClientConsumer {
 
 ## 7. Levantar y probar los microservicios
 
-...existing code...
+
+### 7. Levantar y probar los microservicios
+
+#### 7.1. Levantar todo
+```bash
+docker-compose up --build
+```
+
+#### 7.2. Probar los endpoints
+- Spring Boot: `GET http://localhost:8080/cursos`
+- Node.js: `POST http://localhost:3000/entregas` con JSON:
+  ```json
+  {
+    "coderId": 1,
+    "moduloId": 2,
+    "descripcion": "Mi entrega de prueba"
+  }
+  ```
+
+#### 7.3. Verificar comunicación
+- Ambos servicios pueden comunicarse por red interna de Docker.
+- Puedes agregar llamadas HTTP entre servicios usando la URL del servicio (ejemplo: `http://lms-service:3000/entregas` desde Java).
 
 ---
 
 ## 8. Checklist y recomendaciones
 
-...existing code...
+
+- [x] Cada microservicio tiene su propio Dockerfile.
+- [x] docker-compose.yml orquesta todos los servicios.
+- [x] Prueba los endpoints con Postman/curl.
+- [x] Documenta cada paso y agrega comentarios en el código.
+- [x] Usa nombres claros y consistentes.
+
+**Recomendaciones:**
+- Mantén los servicios independientes y desacoplados.
+- Usa variables de entorno para configuración sensible.
+- Agrega tests unitarios y de integración.
+- Documenta el flujo de datos y dependencias.
 
 ---
 
 ## 9. Preguntas Frecuentes (FAQ)
 
-...existing code...
+
+**¿Puedo agregar más servicios?** Sí, solo añade más bloques en docker-compose.yml.
+
+**¿Cómo conecto los servicios a MySQL?** Configura la URL de conexión en cada microservicio usando el nombre del servicio `mysql` como host.
+
+**¿Cómo escalo los servicios?** Usa la opción `scale` en Docker Compose o Kubernetes para producción.
+
+---
+
+**Autor:** Javier Ariza  
+**Versión:** 2.1  
+**Descripción:** Guía profesional, funcional y comentada para crear microservicios interoperables con Spring Boot, Node.js y Docker Compose. Incluye ejemplos de consumo entre servicios y adaptador OUT.
 
 ---
 
