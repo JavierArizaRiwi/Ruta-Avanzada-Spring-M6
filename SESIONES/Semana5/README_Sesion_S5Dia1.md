@@ -1,63 +1,77 @@
-# Día 1 - Creación de Endpoints REST con Spring MVC y DTOs **(Arquitectura Hexagonal + Adapter REST)**
+# Día 1 — Spring Security: autenticación, autorización y JWT
 
-En esta sesión aprenderás a exponer servicios REST profesionales usando **Spring MVC**, aplicando principios de **arquitectura hexagonal**, separación de capas y **validaciones automáticas**.  
-Dominio educativo: **Estudiantes**. Todo consumo **externo** en plataforma será **vía API Gateway** (Semana 6); hoy trabajamos el **servicio en local** y preparamos una estructura impecable que luego conectaremos a otros adaptadores (JPA, cache, colas, etc.).
+> **Estado curricular:** inicio de Semana 5. El secreto JWT se obtiene del entorno; la sesión siguiente profundiza refresh token, revocación y OWASP.
+
+En esta sesión protegerás tus endpoints REST con **Spring Security** usando **JWT (JSON Web Tokens)** manteniendo el diseño **hexagonal**. Separaremos claramente responsabilidades: **autenticación**, **emisión/validación** del token y **autorización por roles** vía anotaciones. El adaptador REST seguirá limpio y el dominio seguirá **libre de Spring**.
+
+> Nota: API Gateway se estudia en Semana 14. Durante el núcleo de seis semanas se protege directamente el monolito modular y no se depende de infraestructura distribuida.
 
 ---
 
 ## 1) Objetivos del día
 
-- Comprender el rol de **Spring MVC** como **adaptador de entrada** en una arquitectura hexagonal.  
-- Crear **controladores REST** desacoplados del dominio mediante **DTOs**.  
-- Implementar **validaciones automáticas** con `@Valid` y `jakarta.validation`.  
-- Producir y consumir **JSON** correctamente, devolviendo **códigos HTTP** apropiados.  
-- Mantener la **independencia del dominio**; evitar filtrar entidades JPA o detalles de infraestructura hacia la capa web.
+- Configurar **Spring Security** sin `WebSecurityConfigurerAdapter` (moderno `SecurityFilterChain`).
+- Implementar **login** con **JWT** (emisión/validación).
+- Añadir **autorización por roles** con `@PreAuthorize`.
+- Mantener capas separadas: **dominio** (modelo/puertos), **application** (casos de uso), **adapters** (REST, JPA, seguridad).
+- Configurar **CORS/CSRF**, política **stateless** y **PasswordEncoder**.
+- Probar seguridad con **MockMvc** (web-slice) y ejemplos de headers `Authorization: Bearer`.
 
 ---
 
-## 2) Flujo y responsabilidades (hexagonal)
-
-```
-Cliente HTTP → Adapter IN (Controller REST)
-            → Application (Use Case)        ←→  Application Ports (interfaces)
-            → Adapter OUT (Persistence, etc.)  [hoy: InMemory; luego: JPA/H2]
-            → Domain (Entidades + reglas)
-```
-
-**Reglas clave**:
-- El **controller** solo orquesta: recibe DTOs, invoca **use cases**, mapea respuestas.  
-- El **use case** contiene la lógica de negocio y depende de **puertos** (interfaces).  
-- Los **adapters** implementan puertos (p. ej., repositorio en memoria o JPA).  
-- El **dominio** no depende de Spring ni de librerías de infraestructura.
-
----
-
-## 3) Dependencias mínimas (`pom.xml`)
+## 2) Dependencias (`pom.xml`)
 
 ```xml
 <dependencies>
-  <!-- Web (adapter IN) + Validación -->
+  <!-- Seguridad + Web -->
+  <dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+  </dependency>
   <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-web</artifactId>
   </dependency>
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-validation</artifactId>
-  </dependency>
 
-  <!-- (Opcional para el Día 4: JPA/H2) -->
+  <!-- Persistencia construida en Semana 3 -->
   <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-data-jpa</artifactId>
   </dependency>
   <dependency>
-    <groupId>com.h2database</groupId>
-    <artifactId>h2</artifactId>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-database-postgresql</artifactId>
+  </dependency>
+
+  <!-- JWT -->
+  <dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.13.0</version>
+  </dependency>
+  <dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.13.0</version>
+    <scope>runtime</scope>
+  </dependency>
+  <dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.13.0</version>
     <scope>runtime</scope>
   </dependency>
 
-  <!-- Tests (se usarán en Día 3) -->
+  <!-- Validación y Testing -->
+  <dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-validation</artifactId>
+  </dependency>
   <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-test</artifactId>
@@ -68,341 +82,431 @@ Cliente HTTP → Adapter IN (Controller REST)
 
 ---
 
-## 4) Estructura sugerida del proyecto (impecable)
+## 3) Propiedades recomendadas (`application.yml`)
+
+```yaml
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/riwi_learning}
+    username: ${DB_USER:riwi}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      expiration-minutes: 60
+
+logging:
+  level:
+    org.springframework.security: info
+```
+
+---
+
+## 4) Estructura (hexagonal)
 
 ```
 com.riwi.academico
- ├─ domain/                                   # Entidades y reglas puras (sin Spring)
- ├─ application/
- │   ├─ ports/                                # Puertos (interfaces) p.ej. repositorio
- │   └─ usecase/                              # Casos de uso (servicios de aplicación)
+ ├─ domain/
+ │   ├─ model/                  # Usuario, Role (sin dependencias de Spring)
+ │   ├─ ports/                  # UserRepositoryPort, AuthServicePort
+ │   └─ service/                # Casos de uso (AuthService)
+ ├─ application/                # (opcional si separas orquestación de casos)
  ├─ infrastructure/
  │   ├─ adapters/
- │   │   ├─ in/rest/EstudianteController.java # Adapter de entrada (Spring MVC)
- │   │   └─ out/persistence/                  # Adapter de salida (InMemory/JPA)
- │   └─ config/                               # Beans y manejo global de errores
- ├─ dto/                                      # DTOs request/response
- └─ AcademicoApplication.java
+ │   │   ├─ in/rest/            # AuthController, EstudianteController (protegido)
+ │   │   └─ out/
+ │   │       ├─ jpa/            # Entidades JPA y repositorios
+ │   │       └─ security/       # JwtTokenProvider, JwtAuthFilter, SecurityConfig, UDS
+ │   └─ config/                 # Beans de wiring (si aplica)
+ └─ dto/                        # LoginRequest, TokenResponse, etc.
 ```
-
-> Más adelante podrás reemplazar `out/persistence/InMemory...` por `JPA` **sin tocar** controller ni use case.
 
 ---
 
-## 5) DTOs: contrato de entrada/salida
-
-Los **DTOs** evitan exponer clases internas del dominio y facilitan **validaciones** y **evolución** del API.
+## 5) Dominio (modelo + puertos)
 
 ```java
-// dto/EstudianteRequest.java
-package com.riwi.academico.dto;
-
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-
-public class EstudianteRequest {
-  @NotBlank(message = "El nombre es obligatorio")
-  @Size(min = 3, max = 50, message = "El nombre debe tener entre 3 y 50 caracteres")
-  private String nombre;
-
-  public String getNombre() { return nombre; }
-  public void setNombre(String nombre) { this.nombre = nombre; }
-}
+// domain/model/Role.java
+package com.riwi.academico.domain.model;
+public enum Role { ADMIN, PROFESOR, ESTUDIANTE }
 ```
 
 ```java
-// dto/EstudianteResponse.java
-package com.riwi.academico.dto;
-
-public class EstudianteResponse {
-  private Long id;
-  private String nombre;
-
-  public EstudianteResponse(Long id, String nombre) {
-    this.id = id; this.nombre = nombre;
+// domain/model/Usuario.java
+package com.riwi.academico.domain.model;
+public class Usuario {
+  private Long id; private String username; private String password; private Role role;
+  public Usuario(Long id, String username, String password, Role role){
+    this.id = id; this.username = username; this.password = password; this.role = role;
   }
-  public Long getId() { return id; }
-  public String getNombre() { return nombre; }
+  public Long getId(){ return id; } public String getUsername(){ return username; }
+  public String getPassword(){ return password; } public Role getRole(){ return role; }
+}
+```
+
+```java
+// domain/ports/UserRepositoryPort.java
+package com.riwi.academico.domain.ports;
+import com.riwi.academico.domain.model.Usuario;
+import java.util.Optional;
+public interface UserRepositoryPort {
+  Optional<Usuario> findByUsername(String username);
+  Usuario save(Usuario user);
+}
+```
+
+```java
+// domain/ports/AuthServicePort.java
+package com.riwi.academico.domain.ports;
+public interface AuthServicePort {
+  String login(String username, String rawPassword);
+  void register(String username, String rawPassword, String roleName);
 }
 ```
 
 ---
 
-## 6) Dominio + Puertos + Caso de uso (application)
+## 6) Adapter OUT (JPA educativo)
 
 ```java
-// domain/Estudiante.java
-package com.riwi.academico.domain;
+// infrastructure/adapters/out/jpa/UserEntity.java
+package com.riwi.academico.infrastructure.adapters.out.jpa;
+import jakarta.persistence.*;
 
-public class Estudiante {
-  private Long id;
-  private String nombre;
-  public Estudiante(Long id, String nombre){ this.id=id; this.nombre=nombre; }
-  public Long getId(){ return id; }
-  public String getNombre(){ return nombre; }
+@Entity @Table(name="usuarios")
+public class UserEntity {
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
+  @Column(unique = true, nullable = false) private String username;
+  @Column(nullable = false) private String password;
+  @Column(nullable = false) private String role;
+  public Long getId(){ return id; } public String getUsername(){ return username; }
+  public String getPassword(){ return password; } public String getRole(){ return role; }
+  public void setUsername(String u){ this.username = u; } public void setPassword(String p){ this.password = p; }
+  public void setRole(String r){ this.role = r; }
 }
 ```
 
 ```java
-// application/ports/EstudianteRepositoryPort.java
-package com.riwi.academico.application.ports;
+// infrastructure/adapters/out/jpa/SpringUserRepository.java
+package com.riwi.academico.infrastructure.adapters.out.jpa;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+public interface SpringUserRepository extends JpaRepository<UserEntity, Long> {
+  Optional<UserEntity> findByUsername(String username);
+}
+```
 
-import com.riwi.academico.domain.Estudiante;
-import java.util.List;
+```java
+// infrastructure/adapters/out/jpa/UserRepositoryAdapter.java
+package com.riwi.academico.infrastructure.adapters.out.jpa;
+
+import com.riwi.academico.domain.model.Role;
+import com.riwi.academico.domain.model.Usuario;
+import com.riwi.academico.domain.ports.UserRepositoryPort;
+import org.springframework.stereotype.Repository;
 import java.util.Optional;
 
-public interface EstudianteRepositoryPort {
-  Long nextId();
-  boolean existsByNombre(String nombre);
-  Estudiante save(Estudiante e);
-  Optional<Estudiante> findById(Long id);
-  List<Estudiante> findAll();
+@Repository
+public class UserRepositoryAdapter implements UserRepositoryPort {
+  private final SpringUserRepository repo;
+  public UserRepositoryAdapter(SpringUserRepository repo) { this.repo = repo; }
+
+  @Override
+  public Optional<Usuario> findByUsername(String username) {
+    return repo.findByUsername(username)
+      .map(e -> new Usuario(e.getId(), e.getUsername(), e.getPassword(), Role.valueOf(e.getRole())));
+  }
+
+  @Override
+  public Usuario save(Usuario u) {
+    UserEntity e = new UserEntity();
+    e.setUsername(u.getUsername()); e.setPassword(u.getPassword()); e.setRole(u.getRole().name());
+    var saved = repo.save(e);
+    return new Usuario(saved.getId(), saved.getUsername(), saved.getPassword(), Role.valueOf(saved.getRole()));
+  }
+}
+```
+
+---
+
+## 7) JWT y configuración de seguridad (adapter OUT / security)
+
+```java
+// infrastructure/adapters/out/security/JwtTokenProvider.java
+package com.riwi.academico.infrastructure.adapters.out.security;
+
+import io.jsonwebtoken.*; import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value; import org.springframework.stereotype.Component;
+import javax.crypto.SecretKey; import java.nio.charset.StandardCharsets; import java.util.Date;
+
+@Component
+public class JwtTokenProvider {
+  private final SecretKey key; private final long expirationMs;
+  public JwtTokenProvider(@Value("${app.security.jwt.secret}") String secret,
+                          @Value("${app.security.jwt.expiration-minutes}") long expirationMinutes) {
+    this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    this.expirationMs = expirationMinutes * 60_000;
+  }
+  public String generate(String username, String role) {
+    Date now = new Date(); Date exp = new Date(now.getTime() + expirationMs);
+    return Jwts.builder().subject(username).claim("role", role).issuedAt(now).expiration(exp)
+      .signWith(key).compact();
+  }
+  public Jws<Claims> validate(String token) {
+    return Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
+  }
+  public String getUsername(String token){ return validate(token).getPayload().getSubject(); }
+  public String getRole(String token){ return validate(token).getPayload().get("role", String.class); }
 }
 ```
 
 ```java
-// application/usecase/RegistrarEstudianteUseCase.java
-package com.riwi.academico.application.usecase;
+// infrastructure/adapters/out/security/JwtAuthFilter.java
+package com.riwi.academico.infrastructure.adapters.out.security;
 
-import com.riwi.academico.application.ports.EstudianteRepositoryPort;
-import com.riwi.academico.domain.Estudiante;
+import jakarta.servlet.*; import jakarta.servlet.http.*; import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+import java.io.IOException; import java.util.List;
+
+public class JwtAuthFilter extends OncePerRequestFilter {
+  private final JwtTokenProvider provider;
+  public JwtAuthFilter(JwtTokenProvider provider){ this.provider = provider; }
+
+  @Override
+  protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+      throws ServletException, IOException {
+    String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+    if (header != null && header.startsWith("Bearer ")) {
+      String token = header.substring(7);
+      try {
+        String username = provider.getUsername(token);
+        String role = provider.getRole(token);
+        var auth = new UsernamePasswordAuthenticationToken(
+          username, null, List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+      } catch (Exception ex) {
+        SecurityContextHolder.clearContext();
+      }
+    }
+    chain.doFilter(request, response);
+  }
+}
+```
+
+```java
+// infrastructure/adapters/out/security/SecurityConfig.java
+package com.riwi.academico.infrastructure.adapters.out.security;
+
+import org.springframework.context.annotation.*; import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.*; import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.*;
 
 import java.util.List;
-import java.util.NoSuchElementException;
-
-public class RegistrarEstudianteUseCase {
-
-  private final EstudianteRepositoryPort repo;
-  public RegistrarEstudianteUseCase(EstudianteRepositoryPort repo){ this.repo = repo; }
-
-  public Estudiante crear(String nombre){
-    if (repo.existsByNombre(nombre)) throw new IllegalArgumentException("El nombre ya existe");
-    var e = new Estudiante(repo.nextId(), nombre);
-    return repo.save(e);
-  }
-
-  public Estudiante obtener(Long id){
-    return repo.findById(id).orElseThrow(() -> new NoSuchElementException("Estudiante no encontrado"));
-  }
-
-  public List<Estudiante> listar(){ return repo.findAll(); }
-}
-```
-
-> Observa que **no hay anotaciones de Spring** en el **use case** ni en el **dominio**.
-
----
-
-## 7) Adapter OUT (persistencia en memoria, educativo)
-
-```java
-// infrastructure/adapters/out/persistence/InMemoryEstudianteRepository.java
-package com.riwi.academico.infrastructure.adapters.out.persistence;
-
-import com.riwi.academico.application.ports.EstudianteRepositoryPort;
-import com.riwi.academico.domain.Estudiante;
-import org.springframework.stereotype.Repository;
-
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
-
-@Repository
-public class InMemoryEstudianteRepository implements EstudianteRepositoryPort {
-
-  private final Map<Long, Estudiante> data = new ConcurrentHashMap<>();
-  private final AtomicLong seq = new AtomicLong(0);
-
-  @Override public Long nextId(){ return seq.incrementAndGet(); }
-
-  @Override public boolean existsByNombre(String nombre){
-    return data.values().stream().anyMatch(e -> e.getNombre().equalsIgnoreCase(nombre));
-  }
-
-  @Override public Estudiante save(Estudiante e){
-    data.put(e.getId(), e);
-    return e;
-  }
-
-  @Override public Optional<Estudiante> findById(Long id){ return Optional.ofNullable(data.get(id)); }
-
-  @Override public List<Estudiante> findAll(){ return new ArrayList<>(data.values()); }
-}
-```
-
----
-
-## 8) Wiring (configurar el use case como bean)
-
-```java
-// infrastructure/config/AppConfig.java
-package com.riwi.academico.infrastructure.config;
-
-import com.riwi.academico.application.ports.EstudianteRepositoryPort;
-import com.riwi.academico.application.usecase.RegistrarEstudianteUseCase;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 @Configuration
-public class AppConfig {
+@EnableMethodSecurity
+public class SecurityConfig {
+
+  private final JwtTokenProvider provider; private final UserDetailsService userDetailsService;
+  public SecurityConfig(JwtTokenProvider provider, UserDetailsService uds){ this.provider = provider; this.userDetailsService = uds; }
 
   @Bean
-  public RegistrarEstudianteUseCase registrarEstudianteUseCase(EstudianteRepositoryPort repo){
-    return new RegistrarEstudianteUseCase(repo);
+  public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    http.csrf(csrf -> csrf.disable())
+      .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+      .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+      .authorizeHttpRequests(auth -> auth
+        .requestMatchers("/auth/**").permitAll()
+        .requestMatchers(HttpMethod.GET, "/api/estudiantes/**").hasAnyRole("ADMIN","PROFESOR","ESTUDIANTE")
+        .requestMatchers("/api/**").hasAnyRole("ADMIN","PROFESOR")
+        .anyRequest().authenticated()
+      )
+      .addFilterBefore(new JwtAuthFilter(provider), UsernamePasswordAuthenticationFilter.class);
+    return http.build();
+  }
+
+  @Bean public PasswordEncoder passwordEncoder(){ return new BCryptPasswordEncoder(); }
+
+  @Bean public AuthenticationManager authenticationManager(){
+    DaoAuthenticationProvider p = new DaoAuthenticationProvider();
+    p.setUserDetailsService(userDetailsService); p.setPasswordEncoder(passwordEncoder());
+    return new ProviderManager(p);
+  }
+
+  @Bean
+  public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(List.of("http://localhost:3000","http://localhost:4200"));
+    config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+    config.setAllowedHeaders(List.of("*"));
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
+  }
+}
+```
+
+```java
+// infrastructure/adapters/out/security/CustomUserDetailsService.java
+package com.riwi.academico.infrastructure.adapters.out.security;
+
+import com.riwi.academico.domain.ports.UserRepositoryPort;
+import org.springframework.security.core.userdetails.*; import org.springframework.stereotype.Service;
+
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+  private final UserRepositoryPort users;
+  public CustomUserDetailsService(UserRepositoryPort users){ this.users = users; }
+  @Override
+  public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    var u = users.findByUsername(username).orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado"));
+    return User.withUsername(u.getUsername()).password(u.getPassword()).roles(u.getRole().name()).build();
   }
 }
 ```
 
 ---
 
-## 9) Adapter IN (Controller REST)
-
-Orquesta HTTP ↔ Use Case ↔ DTOs y controla códigos de respuesta.
+## 8) Caso de uso de Autenticación + DTOs + Controller
 
 ```java
-// infrastructure/adapters/in/rest/EstudianteController.java
+// domain/service/AuthService.java
+package com.riwi.academico.domain.service;
+
+import com.riwi.academico.domain.model.Role;
+import com.riwi.academico.domain.model.Usuario;
+import com.riwi.academico.domain.ports.AuthServicePort;
+import com.riwi.academico.domain.ports.UserRepositoryPort;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AuthService implements AuthServicePort {
+  private final UserRepositoryPort users; private final PasswordEncoder encoder;
+  private final com.riwi.academico.infrastructure.adapters.out.security.JwtTokenProvider jwt;
+  public AuthService(UserRepositoryPort users, PasswordEncoder encoder,
+                     com.riwi.academico.infrastructure.adapters.out.security.JwtTokenProvider jwt) {
+    this.users = users; this.encoder = encoder; this.jwt = jwt;
+  }
+  @Override
+  public String login(String username, String rawPassword) {
+    var u = users.findByUsername(username).orElseThrow(() -> new RuntimeException("Credenciales inválidas"));
+    if (!encoder.matches(rawPassword, u.getPassword())) throw new RuntimeException("Credenciales inválidas");
+    return jwt.generate(u.getUsername(), u.getRole().name());
+  }
+  @Override
+  public void register(String username, String rawPassword, String roleName) {
+    String enc = encoder.encode(rawPassword);
+    users.save(new Usuario(null, username, enc, Role.valueOf(roleName)));
+  }
+}
+```
+
+```java
+// dto/LoginRequest.java
+package com.riwi.academico.dto;
+import jakarta.validation.constraints.NotBlank;
+public class LoginRequest {
+  @NotBlank private String username;
+  @NotBlank private String password;
+  public String getUsername(){ return username; } public void setUsername(String u){ this.username = u; }
+  public String getPassword(){ return password; } public void setPassword(String p){ this.password = p; }
+}
+```
+
+```java
+// dto/TokenResponse.java
+package com.riwi.academico.dto;
+public class TokenResponse { private String token; public TokenResponse(String token){ this.token = token; }
+  public String getToken(){ return token; } }
+```
+
+```java
+// infrastructure/adapters/in/rest/AuthController.java
 package com.riwi.academico.infrastructure.adapters.in.rest;
 
-import com.riwi.academico.application.usecase.RegistrarEstudianteUseCase;
-import com.riwi.academico.domain.Estudiante;
-import com.riwi.academico.dto.EstudianteRequest;
-import com.riwi.academico.dto.EstudianteResponse;
+import com.riwi.academico.domain.ports.AuthServicePort;
+import com.riwi.academico.dto.LoginRequest; import com.riwi.academico.dto.TokenResponse;
 import jakarta.validation.Valid;
-import org.springframework.http.*;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity; import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/v1/estudiantes")
-public class EstudianteController {
-
-  private final RegistrarEstudianteUseCase useCase;
-  public EstudianteController(RegistrarEstudianteUseCase useCase){ this.useCase = useCase; }
-
-  @PostMapping
-  public ResponseEntity<EstudianteResponse> crear(@Valid @RequestBody EstudianteRequest req){
-    Estudiante e = useCase.crear(req.getNombre());
-    return ResponseEntity.status(HttpStatus.CREATED)
-            .body(new EstudianteResponse(e.getId(), e.getNombre()));
+@RestController @RequestMapping("/auth")
+public class AuthController {
+  private final AuthServicePort auth; public AuthController(AuthServicePort auth){ this.auth = auth; }
+  @PostMapping("/login") public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest req){
+    return ResponseEntity.ok(new TokenResponse(auth.login(req.getUsername(), req.getPassword())));
   }
-
-  @GetMapping("/{id}")
-  public ResponseEntity<EstudianteResponse> obtener(@PathVariable Long id){
-    Estudiante e = useCase.obtener(id);
-    return ResponseEntity.ok(new EstudianteResponse(e.getId(), e.getNombre()));
-  }
-
-  @GetMapping
-  public ResponseEntity<List<EstudianteResponse>> listar(){
-    var res = useCase.listar().stream()
-            .map(e -> new EstudianteResponse(e.getId(), e.getNombre()))
-            .toList();
-    return ResponseEntity.ok(res);
+  @PostMapping("/register") public ResponseEntity<Void> register(@RequestParam String username,
+                              @RequestParam String password, @RequestParam String role){
+    auth.register(username, password, role); return ResponseEntity.ok().build();
   }
 }
 ```
 
----
-
-## 10) Manejo global de errores (recomendado)
-
-Centraliza respuestas de error coherentes (validación, negocio y no encontrado).
+**Autorización por roles en endpoints REST:**
 
 ```java
-// infrastructure/config/GlobalExceptionHandler.java
-package com.riwi.academico.infrastructure.config;
+// infrastructure/adapters/in/rest/EstudianteController.java (fragmentos)
+@PreAuthorize("hasRole('ADMIN') or hasRole('PROFESOR')")
+@PostMapping public ResponseEntity<EstudianteResponse> crear(@Valid @RequestBody EstudianteRequest req){ ... }
 
-import org.springframework.http.*;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.*;
-import java.time.Instant;
-import java.util.*;
+@PreAuthorize("hasAnyRole('ADMIN','PROFESOR','ESTUDIANTE')")
+@GetMapping public ResponseEntity<List<EstudianteResponse>> listar(){ ... }
+```
 
-@RestControllerAdvice
-public class GlobalExceptionHandler {
+---
 
-  @ExceptionHandler(MethodArgumentNotValidException.class)
-  public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-    var fields = new LinkedHashMap<String, String>();
-    ex.getBindingResult().getFieldErrors().forEach(f -> fields.put(f.getField(), f.getDefaultMessage()));
+## 9) CSRF y CORS
 
-    var body = new LinkedHashMap<String, Object>();
-    body.put("timestamp", Instant.now().toString());
-    body.put("status", 400);
-    body.put("error", "Bad Request");
-    body.put("message", "Validación fallida");
-    body.put("fields", fields);
+- **CSRF** deshabilitado (API stateless con JWT).
+- **CORS** habilitado para orígenes locales (React/Angular) mediante `CorsConfigurationSource`.
 
-    return ResponseEntity.badRequest().body(body);
-  }
+---
 
-  @ExceptionHandler(IllegalArgumentException.class)
-  public ResponseEntity<Map<String, Object>> handleConflict(IllegalArgumentException ex) {
-    var body = Map.of(
-      "timestamp", Instant.now().toString(),
-      "status", 409, "error", "Conflict", "message", ex.getMessage()
-    );
-    return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
-  }
+## 10) Pruebas con MockMvc
 
-  @ExceptionHandler(NoSuchElementException.class)
-  public ResponseEntity<Map<String, Object>> handleNotFound(NoSuchElementException ex) {
-    var body = Map.of(
-      "timestamp", Instant.now().toString(),
-      "status", 404, "error", "Not Found", "message", ex.getMessage()
-    );
-    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+```java
+// src/test/java/com/riwi/academico/infrastructure/adapters/in/rest/AuthControllerTest.java
+@WebMvcTest(AuthController.class)
+class AuthControllerTest {
+  @Autowired private MockMvc mvc;
+  @MockitoBean private AuthServicePort auth;
+
+  @Test
+  void debeRetornarTokenAlLoguear() throws Exception {
+    Mockito.when(auth.login("admin","123")).thenReturn("jwt-token");
+    mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+        .content("{\"username\":\"admin\",\"password\":\"123\"}"))
+      .andExpect(status().isOk()).andExpect(jsonPath("$.token").value("jwt-token"));
   }
 }
 ```
 
 ---
 
-## 11) Pruebas manuales rápidas
+## 11) Resultado esperado
 
-**Crear estudiante**
-```
-POST http://localhost:8080/api/v1/estudiantes
-Content-Type: application/json
-
-{
-  "nombre": "Ana"
-}
-```
-Respuestas esperadas:
-- `201 Created` → `{ "id":1, "nombre":"Ana" }`
-- `400 Bad Request` si `nombre` es vacío o < 3 caracteres
-- `409 Conflict` si el nombre ya existe
-
-**Obtener por id**
-```
-GET http://localhost:8080/api/v1/estudiantes/1
-```
-
-**Listar**
-```
-GET http://localhost:8080/api/v1/estudiantes
-```
-
----
-
-## 12) Buenas prácticas
-
-| Práctica | Beneficio |
-|----------|-----------|
-| DTOs en entrada/salida | Desacopla la API del modelo interno |
-| `@Valid` + `jakarta.validation` | Validaciones coherentes y seguras |
-| `@RestControllerAdvice` | Respuestas de error consistentes |
-| Evitar lógica en controlador | Responsabilidad única y tests simples |
-| Códigos HTTP correctos | Contrato claro con el cliente |
-| Use cases sin Spring | Dominio portable y testeable |
-
----
-
-## 13) Resultado esperado
-
-- Endpoints `POST /api/v1/estudiantes`, `GET /api/v1/estudiantes/{id}`, `GET /api/v1/estudiantes`.  
-- Validación automática y **manejo de errores** centralizado.  
-- Controladores limpios (adapter IN) y repositorio en memoria (adapter OUT) **fácilmente reemplazable** por JPA/H2 (Día 4).  
-- Base hexagonal lista para **Swagger** y **Testing** (Día 3), y para enrutar por **API Gateway** (Semana 6).
+- API protegida con **Spring Security + JWT**.
+- Endpoints públicos `/auth/**` y privados `/api/**`.
+- **Roles** aplicados con `@PreAuthorize`.
+- Diseño **hexagonal**: dominio independiente, adapters de seguridad/persistencia separados.
+- Pruebas básicas de autenticación con **MockMvc** funcionando.

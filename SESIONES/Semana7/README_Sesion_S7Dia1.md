@@ -1,5 +1,7 @@
 # Día 1 - Comunicación Asíncrona con RabbitMQ **en Arquitectura Hexagonal** (Publisher–Subscriber educativo, acceso vía API Gateway)
 
+> **Estado curricular:** referencia comparativa opcional. La ruta principal usa Apache Kafka en Semana 9; RabbitMQ no equivale semánticamente a un log distribuido.
+
 En esta sesión integrarás **RabbitMQ** como *message broker* dentro de un ecosistema de **microservicios hexagonales**.  
 Los endpoints HTTP para publicar eventos se **consumen a través del API Gateway**, mientras que la mensajería entre servicios se realiza **directamente por RabbitMQ** (no pasa por el gateway).  
 Mantendremos el **dominio** y **casos de uso** libres de Spring y de RabbitMQ usando **puertos** y **adaptadores**.

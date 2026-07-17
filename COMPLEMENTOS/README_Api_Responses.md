@@ -1,808 +1,189 @@
+# Respuestas profesionales en APIs Spring Boot
 
-# Guía Profesional: Respuestas en APIs Spring Boot
+> **Estado curricular:** guía consolidada de Semanas 2–3. Sustituye las dos versiones duplicadas anteriores y usa RFC 9457.
 
-## Introducción
+## Principios
 
-Una API profesional debe responder de forma consistente, clara y alineada a estándares internacionales. En Spring Boot, esto implica usar contratos uniformes para éxito y error, códigos HTTP correctos, metadatos útiles y pruebas automatizadas. Esta guía te enseña cómo lograrlo con ejemplos, teoría y buenas prácticas.
+1. HTTP ya ofrece estados, headers y negociación de contenido.
+2. DTO de API y modelo interno son contratos diferentes.
+3. Los errores usan `application/problem+json` y `ProblemDetail`.
+4. La respuesta no revela stack traces, SQL ni datos sensibles.
+5. Un correlation ID ayuda a buscar la operación, pero no se usa como tag de métrica de alta cardinalidad.
 
----
+## Respuestas de éxito
 
-## Objetivos
+No se impone un envelope universal. Para un recurso simple se devuelve el DTO; para una colección paginada se incluye metadata estable.
 
-- Definir un contrato uniforme de éxito: `ApiResponse<T>` con `status`, `data` y `meta` (mensaje, `traceId`, versión, paginación).
-- Implementar un manejador global de errores con `@RestControllerAdvice` y `ProblemDetail` (RFC 7807).
-- Usar códigos HTTP correctos: `200/201/204` para éxito; `400/401/403/404/409/422/500` para errores.
-- Proveer ejemplos de controladores, DTOs, validación y pruebas.
-
----
-
-## Contrato de Éxito: Envelope Genérico
-
-### ApiResponse<T>
 ```java
-public record ApiResponse<T>(
-    String status, // "success"
-    T data,
-    Meta meta
-) {
-    public static <T> ApiResponse<T> ok(T data) {
-        return new ApiResponse<>("success", data, null);
-    }
-    public static <T> ApiResponse<T> withMeta(T data, Meta meta) {
-        return new ApiResponse<>("success", data, meta);
-    }
+record LearningRouteResponse(UUID id, String name, String status) {}
 
-    public record Meta(
-        String message,
-        String traceId,
-        String version,
-        Pagination page // opcional
-    ) {}
+record PageMetadata(int number, int size, long totalElements, int totalPages) {}
 
-    public record Pagination(
-        int page, int size, long totalElements, int totalPages
-    ) {}
-}
+record PageResponse<T>(List<T> content, PageMetadata page) {}
 ```
 
-**Puntos clave:**
-- No mezcles ProblemDetail (error) con este envelope de éxito.
-- Incluye `traceId` para correlación de logs y soporte.
-- La paginación se modela en `meta.page`.
+Reglas orientativas:
 
----
+| Operación | Estado | Respuesta |
+| --- | ---: | --- |
+| Consulta encontrada | 200 | DTO |
+| Creación | 201 | DTO + `Location` |
+| Actualización completa | 200/204 | DTO o sin cuerpo, de forma consistente |
+| Eliminación sin cuerpo | 204 | Sin body |
+| Solicitud asíncrona aceptada | 202 | Estado/URL de seguimiento |
 
-## Códigos HTTP y Headers
-
-- **200 OK**: GET exitoso.
-- **201 Created** + `Location`: recurso creado.
-- **204 No Content**: operación sin cuerpo (DELETE).
-- **400 Bad Request**: entrada inválida.
-- **401/403**: autenticación/autorización fallida.
-- **404**: recurso no encontrado.
-- **409 Conflict**: colisión de estado.
-- **422 Unprocessable Entity**: regla de negocio incumplida.
-- **500 Internal Server Error**: error no controlado.
-
-**Headers útiles:**
-- `Location`: URI del recurso creado.
-- `ETag`/`If-Match`: concurrencia optimista.
-- `X-Trace-Id`: correlación de logs.
-
----
-
-## Ejemplos de Controladores
-
-### GET por id (200)
-```java
-@RestController
-@RequestMapping("/api/v1/users")
-public class UserController {
-    private final UserService service;
-    public UserController(UserService service) { this.service = service; }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<UserDto>> get(@PathVariable Long id) {
-        UserDto dto = service.get(id); // lanza NotFoundException si no existe
-        return ResponseEntity.ok(ApiResponse.ok(dto));
-    }
-}
-```
-
-### POST crear (201 + Location)
 ```java
 @PostMapping
-public ResponseEntity<ApiResponse<UserDto>> create(
-        @Valid @RequestBody CreateUserReq req,
-        UriComponentsBuilder uri) {
-
-    UserDto created = service.create(req);
-    URI location = uri.path("/api/v1/users/{id}")
-                      .buildAndExpand(created.id()).toUri();
-
-    var meta = new ApiResponse.Meta(
-            "Usuario creado correctamente",
-            Trace.currentId(), "v1", null
-    );
-
-    return ResponseEntity.created(location)
-                         .body(ApiResponse.withMeta(created, meta));
+ResponseEntity<LearningRouteResponse> create(@Valid @RequestBody CreateRouteRequest request) {
+    var created = createRoute.execute(request);
+    var location = URI.create("/api/v1/learning-routes/" + created.id());
+    return ResponseEntity.created(location).body(created);
 }
 ```
 
-### DELETE (204)
-```java
-@DeleteMapping("/{id}")
-public ResponseEntity<Void> delete(@PathVariable Long id) {
-    service.delete(id);
-    return ResponseEntity.noContent().build();
-}
-```
+No devolver `200 OK` para cualquier resultado ni incluir body en una respuesta 204.
 
-### Listado paginado (200 + meta.page)
-```java
-@GetMapping
-public ResponseEntity<ApiResponse<List<UserDto>>> list(
-        @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "10") int size) {
+## Paginación y filtros
 
-    Page<UserDto> result = service.list(PageRequest.of(page, size));
+- Limitar `size` para proteger base de datos y memoria.
+- Permitir solo campos de ordenamiento conocidos.
+- Documentar si la página comienza en cero.
+- Para datasets que cambian rápidamente, evaluar cursor pagination.
+- Evitar ejecutar una consulta N+1 por cada elemento del listado.
 
-    var meta = new ApiResponse.Meta(
-            "Listado de usuarios",
-            Trace.currentId(), "v1",
-            new ApiResponse.Pagination(
-                    result.getNumber(),
-                    result.getSize(),
-                    result.getTotalElements(),
-                    result.getTotalPages()
-            )
-    );
-    return ResponseEntity.ok(ApiResponse.withMeta(result.getContent(), meta));
-}
-```
+## Problem Details RFC 9457
 
----
+Campos estándar:
 
-## Contrato de Error: RFC 7807 y ProblemDetail
+- `type`: URI estable que identifica la categoría.
+- `title`: resumen legible.
+- `status`: estado HTTP.
+- `detail`: explicación segura de esta ocurrencia.
+- `instance`: URI de la solicitud/ocurrencia.
 
-### Principios
-- Usa `ProblemDetail` (Spring Boot 3) para todos los errores.
-- Campos estándar: `type`, `title`, `status`, `detail`, `instance`.
-- Extiende con `code` (código interno), `errors` (validación), `traceId`.
+Se pueden añadir `code`, `correlationId` y `errors`, manteniendo nombres documentados.
 
-### Excepciones de dominio
-```java
-public class NotFoundException extends RuntimeException {
-    private final String code;
-    public NotFoundException(String message, String code) {
-        super(message); this.code = code;
-    }
-    public String code() { return code; }
-}
-
-public class BusinessException extends RuntimeException {
-    private final String code;
-    public BusinessException(String message, String code) {
-        super(message); this.code = code;
-    }
-    public String code() { return code; }
-}
-```
-
-### Manejador global de errores
 ```java
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+final class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
-    @ExceptionHandler(NotFoundException.class)
-    public ProblemDetail handleNotFound(NotFoundException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
-        pd.setType(URI.create("/errors/not-found"));
-        pd.setTitle("Recurso no encontrado");
-        pd.setDetail(ex.getMessage());
-        pd.setProperty("code", ex.code());
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
+    @ExceptionHandler(DuplicateActiveEnrollmentException.class)
+    ResponseEntity<ProblemDetail> duplicate(
+            DuplicateActiveEnrollmentException exception,
+            HttpServletRequest request) {
 
-    @ExceptionHandler(BusinessException.class)
-    public ProblemDetail handleBusiness(BusinessException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
-        pd.setType(URI.create("/errors/business"));
-        pd.setTitle("Regla de negocio incumplida");
-        pd.setDetail(ex.getMessage());
-        pd.setProperty("code", ex.code());
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        pd.setType(URI.create("/errors/validation"));
-        pd.setTitle("Error de validación");
-        pd.setDetail("Uno o más campos son inválidos");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-
-        List<Map<String, Object>> errors = ex.getBindingResult()
-            .getFieldErrors().stream()
-            .map(fe -> Map.of(
-                "field", fe.getField(),
-                "message", fe.getDefaultMessage(),
-                "rejectedValue", fe.getRejectedValue()
-            ))
-            .toList();
-        pd.setProperty("errors", errors);
-        return pd;
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ProblemDetail handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        pd.setType(URI.create("/errors/bad-request"));
-        pd.setTitle("Solicitud mal formada");
-        pd.setDetail("El cuerpo de la solicitud no pudo parsearse");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ProblemDetail handleGeneric(Exception ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-        pd.setType(URI.create("/errors/internal"));
-        pd.setTitle("Error interno");
-        pd.setDetail("Ha ocurrido un error inesperado");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        // log.error("Unhandled", ex) con traceId
-        return pd;
+        var problem = ProblemDetail.forStatus(HttpStatus.CONFLICT);
+        problem.setType(URI.create("https://errors.riwi.io/duplicate-active-enrollment"));
+        problem.setTitle("La inscripción activa ya existe");
+        problem.setDetail(exception.getMessage());
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", "ENROLLMENT_ALREADY_ACTIVE");
+        return ResponseEntity.status(problem.getStatus()).body(problem);
     }
 }
 ```
 
-### Ejemplo de respuesta de error (JSON)
+Configurar el soporte nativo para excepciones de Spring según la versión de Boot y personalizar mensajes para no filtrar implementación.
+
+## Mapeo de errores
+
+| Situación | Estado recomendado |
+| --- | ---: |
+| JSON/constraint inválido | 400 |
+| Credencial ausente o inválida | 401 |
+| Identidad sin permiso | 403 |
+| Recurso inexistente | 404 |
+| Duplicado/conflicto de estado | 409 |
+| Media type no soportado | 415 |
+| Regla semántica no procesable | 422, si el equipo adopta esta convención |
+| Rate limit | 429 |
+| Fallo inesperado | 500 con detalle genérico |
+
+No usar 404 para ocultar indiscriminadamente errores internos ni 500 para reglas esperadas.
+
+## Validación
+
+```java
+record CreateActivityRequest(
+    @NotBlank @Size(max = 120) String title,
+    @NotNull UUID moduleId,
+    @Future Instant dueAt
+) {}
+```
+
+Bean Validation protege el borde. La regla “una actividad pertenece a un módulo existente” se resuelve en el caso de uso/dominio porque requiere estado.
+
+Para errores por campo se puede agregar:
+
 ```json
 {
-  "type": "/errors/validation",
-  "title": "Error de validación",
+  "type": "https://errors.riwi.io/validation",
+  "title": "La solicitud contiene errores",
   "status": 400,
-  "detail": "Uno o más campos son inválidos",
+  "code": "VALIDATION_FAILED",
   "errors": [
-    { "field": "email", "message": "must be a well-formed email address", "rejectedValue": "foo" }
-  ],
-  "traceId": "a3c4e0b1f2...",
-  "instance": "/api/v1/users"
+    {"field": "title", "message": "no debe estar vacío"}
+  ]
 }
 ```
 
----
+No devolver el valor rechazado si puede contener una contraseña, token o dato personal.
 
-## DTOs y Validación
+## Trazabilidad
 
-```java
-public record CreateUserReq(
-    @NotBlank String name,
-    @Email String email,
-    @Min(18) int age
-) {}
+Aceptar o generar `X-Correlation-Id`, validando longitud y caracteres antes de incorporarlo a logs/respuestas. En sistemas distribuidos, propagarlo en HTTP y metadata de Kafka. No sustituye OpenTelemetry ni W3C Trace Context.
 
-public record UserDto(Long id, String name, String email, int age) {}
-```
+## Versionado
 
-- La validación fallida dispara `MethodArgumentNotValidException` y se captura en el manejador global.
-- Mantén los mensajes en `messages.properties` para internacionalización.
+Versionar solo cuando exista una ruptura que no pueda evolucionar compatiblemente. `/api/v1` es válido, pero no reemplaza una política de deprecación. Cambios aditivos suelen ser preferibles; consumidores no deben fallar por campos JSON desconocidos.
 
----
-
-## Trazabilidad y Consistencia
+## Pruebas de contrato
 
 ```java
-public final class Trace {
-    private Trace() {}
-    public static String currentId() {
-        return Optional.ofNullable(org.slf4j.MDC.get("traceId"))
-                       .orElse(UUID.randomUUID().toString());
-    }
-}
-```
-
-**Buenas prácticas:**
-- Poner `traceId` en el body y/o header.
-- Propagarlo a llamadas externas.
-- Loguear si cae en el manejador global.
-
----
-
-## Versionado, Contenido y HATEOAS
-
-- Prefija rutas: `/api/v1/...`.
-- Usa `application/json` como Content-Type.
-- Links/HATEOAS si tu cliente lo necesita.
-- ETags para caching o concurrencia optimista.
-
----
-
-## Pruebas de Contrato
-
-### Éxito con MockMvc
-```java
-@WebMvcTest(UserController.class)
-class UserControllerTest {
-    @Autowired MockMvc mvc;
-    @MockBean UserService service;
-
-    @Test
-    void get_ok() throws Exception {
-        when(service.get(1L)).thenReturn(new UserDto(1L,"Ana","ana@acme.com",25));
-
-        mvc.perform(get("/api/v1/users/1"))
-           .andExpect(status().isOk())
-           .andExpect(jsonPath("$.status").value("success"))
-           .andExpect(jsonPath("$.data.id").value(1));
-    }
-}
-```
-
-### Error de validación
-```java
-@Test
-void create_validation_error() throws Exception {
-    var body = """
-      {"name": "", "email": "bad", "age": 10}
-    """;
-
-    mvc.perform(post("/api/v1/users")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body))
-       .andExpect(status().isBadRequest())
-       .andExpect(jsonPath("$.type").value("/errors/validation"))
-       .andExpect(jsonPath("$.errors").isArray());
-}
-```
-
----
-
-## Antipatrones y Advertencias
-
-- No mezcles envelopes y ProblemDetail en una misma respuesta.
-- No encapsules ProblemDetail dentro de un envelope de éxito.
-- Usa el código HTTP correcto, no solo 400 para todo.
-- No ocultes traceId.
-- No devuelvas 200 con "status":"error" en el body.
-- Incluye Location en 201 Created.
-
----
-
-## Checklist de Adopción
-
-- [ ] ApiResponse<T> implementado en todas las respuestas de éxito.
-- [ ] Manejador global con ProblemDetail para errores comunes.
-- [ ] Status codes correctos y Location en creaciones.
-- [ ] traceId en body/header y logs correlacionados.
-- [ ] Validación con Bean Validation.
-- [ ] Tests MockMvc para éxito y error.
-- [ ] Documentación OpenAPI actualizada.
-
----
-
-## Plantilla mínima (pom.xml)
-```xml
-<dependencies>
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-  </dependency>
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-validation</artifactId>
-  </dependency>
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-test</artifactId>
-    <scope>test</scope>
-  </dependency>
-</dependencies>
-```
-
----
-
-## Preguntas Frecuentes y Recomendaciones
-
-**¿Debo usar Problem Spring Web?**
-Solo si necesitas personalización avanzada; para la mayoría de casos, ProblemDetail es suficiente.
-
-**¿Dónde poner traceId?**
-En el body, en el header y en los logs.
-
-**¿Cómo versiono mi API?**
-Prefija las rutas y documenta los cambios en OpenAPI.
-
-**¿Qué hago si mi cliente necesita links?**
-Agrega HATEOAS solo si es necesario; no es obligatorio si tienes buena documentación.
-
-**¿Cómo valido los contratos?**
-Usa MockMvc y aserciones sobre el shape del JSON.
-
----
-
-¿Dudas o quieres ejemplos específicos? ¡Solicítalos!
-
----
-
-## 1) Contrato de **éxito** (envelope)
-
-### 1.1 `ApiResponse<T>` (genérico y extensible)
-```java
-public record ApiResponse<T>(
-        String status,  // "success"
-        T data,
-        Meta meta
-) {
-    public static <T> ApiResponse<T> ok(T data) {
-        return new ApiResponse<>("success", data, null);
-    }
-    public static <T> ApiResponse<T> withMeta(T data, Meta meta) {
-        return new ApiResponse<>("success", data, meta);
-    }
-
-    public record Meta(
-            String message,
-            String traceId,
-            String version,
-            Pagination page // opcional
-    ) {}
-
-    public record Pagination(
-            int page, int size, long totalElements, int totalPages
-    ) {}
-}
-```
-
-**Notas clave**
-- No mezcles **ProblemDetail** (error) con este envelope (éxito).  
-- Incluye `traceId` (correlación de logs) y `version` (versión del API).  
-- La paginación se modela en `meta.page` —no dupliques datos en el cuerpo.
-
----
-
-## 2) Códigos HTTP y headers (reglas de oro)
-
-- **200 OK** → GET/acciones con cuerpo.  
-- **201 Created** + **`Location`** → creación de recurso.  
-- **204 No Content** → operaciones sin cuerpo (DELETE, toggles sin payload).  
-- **400 Bad Request** → entrada inválida o JSON mal formado.  
-- **401/403** → autenticación/autorización.  
-- **404** → no encontrado.  
-- **409 Conflict** → colisión de estado (ej. nombre único).  
-- **422 Unprocessable Entity** → regla de negocio incumplida (opcional, si tu estándar lo usa).  
-- **500** → error no controlado.
-
-**Headers útiles**  
-- `Location`: URI del recurso creado.  
-- `ETag`/`If-Match`: control de concurrencia optimista.  
-- `X-Trace-Id`: opcional si además lo pones en el body (`meta.traceId`).
-
----
-
-## 3) Éxito en controladores (snippets listos)
-
-### 3.1 GET por id (200)
-```java
-@RestController
-@RequestMapping("/api/v1/users")
-@RequiredArgsConstructor
-public class UserController {
-
-    private final UserService service;
-
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<UserDto>> get(@PathVariable Long id) {
-        UserDto dto = service.get(id); // lanza NotFoundException si no existe
-        return ResponseEntity.ok(ApiResponse.ok(dto));
-    }
-}
-```
-
-### 3.2 POST crear (201 + Location)
-```java
-@PostMapping
-public ResponseEntity<ApiResponse<UserDto>> create(
-        @Valid @RequestBody CreateUserReq req,
-        UriComponentsBuilder uri) {
-
-    UserDto created = service.create(req);
-    URI location = uri.path("/api/v1/users/{id}")
-                      .buildAndExpand(created.id()).toUri();
-
-    var meta = new ApiResponse.Meta(
-            "Usuario creado correctamente",
-            Trace.currentId(), "v1", null
-    );
-
-    return ResponseEntity.created(location)
-                         .body(ApiResponse.withMeta(created, meta));
-}
-```
-
-### 3.3 DELETE (204)
-```java
-@DeleteMapping("/{id}")
-public ResponseEntity<Void> delete(@PathVariable Long id) {
-    service.delete(id);
-    return ResponseEntity.noContent().build();
-}
-```
-
-### 3.4 Listado paginado (200 + `meta.page`)
-```java
-@GetMapping
-public ResponseEntity<ApiResponse<List<UserDto>>> list(
-        @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "10") int size) {
-
-    Page<UserDto> result = service.list(PageRequest.of(page, size));
-
-    var meta = new ApiResponse.Meta(
-            "Listado de usuarios",
-            Trace.currentId(), "v1",
-            new ApiResponse.Pagination(
-                    result.getNumber(),
-                    result.getSize(),
-                    result.getTotalElements(),
-                    result.getTotalPages()
-            )
-    );
-    return ResponseEntity.ok(ApiResponse.withMeta(result.getContent(), meta));
-}
-```
-
----
-
-## 4) Contrato de **error** con RFC 7807 (Problem Details)
-
-### 4.1 Principios
-- Usa `ProblemDetail` (Spring Boot 3) para **todos** los errores.  
-- Campos estándar: `type`, `title`, `status`, `detail`, `instance`.  
-- Extiende con `code` (código interno), `errors` (validación), `traceId`.
-
-### 4.2 Excepciones de dominio
-```java
-public class NotFoundException extends RuntimeException {
-    private final String code;
-    public NotFoundException(String message, String code) {
-        super(message);
-        this.code = code;
-    }
-    public String code() { return code; }
-}
-
-public class BusinessException extends RuntimeException {
-    private final String code;
-    public BusinessException(String message, String code) {
-        super(message); this.code = code;
-    }
-    public String code() { return code; }
-}
-```
-
-### 4.3 Manejador global (`@RestControllerAdvice`)
-```java
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    @ExceptionHandler(NotFoundException.class)
-    public ProblemDetail handleNotFound(NotFoundException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
-        pd.setType(URI.create("/errors/not-found"));
-        pd.setTitle("Recurso no encontrado");
-        pd.setDetail(ex.getMessage());
-        pd.setProperty("code", ex.code());
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
-
-    @ExceptionHandler(BusinessException.class)
-    public ProblemDetail handleBusiness(BusinessException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
-        pd.setType(URI.create("/errors/business"));
-        pd.setTitle("Regla de negocio incumplida");
-        pd.setDetail(ex.getMessage());
-        pd.setProperty("code", ex.code());
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        pd.setType(URI.create("/errors/validation"));
-        pd.setTitle("Error de validación");
-        pd.setDetail("Uno o más campos son inválidos");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-
-        List<Map<String, Object>> errors = ex.getBindingResult()
-            .getFieldErrors().stream()
-            .map(fe -> Map.of(
-                "field", fe.getField(),
-                "message", fe.getDefaultMessage(),
-                "rejectedValue", fe.getRejectedValue()
-            ))
-            .toList();
-        pd.setProperty("errors", errors);
-        return pd;
-    }
-
-    @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ProblemDetail handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        pd.setType(URI.create("/errors/bad-request"));
-        pd.setTitle("Solicitud mal formada");
-        pd.setDetail("El cuerpo de la solicitud no pudo parsearse");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        return pd;
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ProblemDetail handleGeneric(Exception ex, HttpServletRequest req) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.INTERNAL_SERVER_ERROR);
-        pd.setType(URI.create("/errors/internal"));
-        pd.setTitle("Error interno");
-        pd.setDetail("Ha ocurrido un error inesperado");
-        pd.setProperty("traceId", Trace.currentId());
-        pd.setProperty("instance", req.getRequestURI());
-        // log.error("Unhandled", ex) con traceId
-        return pd;
-    }
-}
-```
-
-### 4.4 Ejemplo de respuesta de error (JSON)
-```json
-{
-  "type": "/errors/validation",
-  "title": "Error de validación",
-  "status": 400,
-  "detail": "Uno o más campos son inválidos",
-  "errors": [
-    { "field": "email", "message": "must be a well-formed email address", "rejectedValue": "foo" }
-  ],
-  "traceId": "a3c4e0b1f2...",
-  "instance": "/api/v1/users"
-}
-```
-
----
-
-## 5) DTOs y validación (Bean Validation)
-
-```java
-public record CreateUserReq(
-        @NotBlank String name,
-        @Email String email,
-        @Min(18) int age
-) {}
-
-public record UserDto(Long id, String name, String email, int age) {}
-```
-
-- La validación fallida dispara `MethodArgumentNotValidException` → la capturamos en el `@RestControllerAdvice`.  
-- Mantén **mensajes** en *messages.properties* para i18n (opcional).
-
----
-
-## 6) Trazabilidad (`traceId`) y consistencia
-
-```java
-public final class Trace {
-    private Trace() {}
-    public static String currentId() {
-        return Optional.ofNullable(org.slf4j.MDC.get("traceId"))
-                       .orElse(UUID.randomUUID().toString());
-    }
-}
-```
-
-**Buenas prácticas**
-- Poner `traceId` en **response body** (meta) y/o **header** (`X-Trace-Id`).  
-- Propagarlo a llamadas externas (HTTP, mensajería).  
-- Loguear si cae en `@RestControllerAdvice`.
-
----
-
-## 7) Versionado, contenido y *HATEOAS* (opcional)
-
-- Prefija rutas: `/api/v1/...`.  
-- `Content-Type`: usa `application/json`.  
-- Links/HATEOAS si tu cliente lo necesita (no imprescindible si ya documentas con OpenAPI).  
-- ETags para *reads* que requieran **caching** o **concurrencia optimista**.
-
----
-
-## 8) Pruebas de contrato de respuesta
-
-### 8.1 Éxito con `MockMvc`
-```java
-@WebMvcTest(UserController.class)
-class UserControllerTest {
+@WebMvcTest(LearningRouteController.class)
+class LearningRouteControllerTest {
 
     @Autowired MockMvc mvc;
-    @MockBean UserService service;
+    @MockitoBean CreateLearningRouteUseCase useCase;
 
     @Test
-    void get_ok() throws Exception {
-        when(service.get(1L)).thenReturn(new UserDto(1L,"Ana","ana@acme.com",25));
-
-        mvc.perform(get("/api/v1/users/1"))
-           .andExpect(status().isOk())
-           .andExpect(jsonPath("$.status").value("success"))
-           .andExpect(jsonPath("$.data.id").value(1))
-           .andExpect(jsonPath("$.meta.traceId").doesNotExist());
+    void createsWithLocation() throws Exception {
+        // given: configurar caso de uso
+        // when/then: validar 201, Location y JSON público
     }
 }
 ```
 
-### 8.2 Error de validación
-```java
-@Test
-void create_validation_error() throws Exception {
-    var body = """
-      {"name": "", "email": "bad", "age": 10}
-    """;
+Escenarios mínimos:
 
-    mvc.perform(post("/api/v1/users")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(body))
-       .andExpect(status().isBadRequest())
-       .andExpect(jsonPath("$.type").value("/errors/validation"))
-       .andExpect(jsonPath("$.errors").isArray());
-}
-```
+- 201 y header `Location`;
+- 400 con lista de campos;
+- 401 y 403 diferenciados;
+- 404 y 409 con `type`/`code` estable;
+- paginación y límite máximo;
+- media type `application/problem+json`.
 
----
+## Antipatrones
 
-## 9) Antipatrones y advertencias
+- `ApiResponse<T>` obligatorio incluso para 204 o Problem Details.
+- Devolver `Map<String,Object>` desde cada controlador.
+- Exponer entidades JPA o excepciones crudas.
+- `try/catch` genérico por endpoint.
+- Mensajes de error como único identificador de máquina.
+- Inventar un status HTTP distinto para cada regla.
 
-- **Mezclar envelopes y ProblemDetail** en una misma respuesta: **no**.  
-- Encapsular `ProblemDetail` dentro de un envelope de éxito: **no** (rompe RFC 7807).  
-- Reutilizar `400` para **todo**: usa el código correcto (404/409/422…).  
-- Ocultar `traceId`: dificulta el soporte.  
-- Devolver `200` con "status":"error" en el body: **anti-REST**.  
-- No incluir `Location` en `201 Created`: pierde valor semántico.
+## Checklist
 
----
+- [ ] DTO separados del modelo persistente.
+- [ ] Estados/headers correctos.
+- [ ] RFC 9457 consistente.
+- [ ] Códigos de error documentados.
+- [ ] Paginación limitada.
+- [ ] Trazabilidad segura.
+- [ ] OpenAPI y pruebas actualizadas.
 
-## 10) Checklist de adopción
+## Recursos oficiales
 
-- [ ] `ApiResponse<T>` implementado y usado en **todas las respuestas de éxito**.  
-- [ ] `@RestControllerAdvice` con **ProblemDetail** para errores comunes (404, 400, 422, 409, 500).  
-- [ ] **Status codes** correctos y `Location` en creaciones.  
-- [ ] `traceId` en body/header y logs correlacionados.  
-- [ ] Validación con *Bean Validation* (`@Valid` en endpoints).  
-- [ ] Tests *MockMvc* para **éxito y error** (contratos).  
-- [ ] Documentación OpenAPI actualizada (opcional pero recomendado).
-
----
-
-## 11) Plantilla mínima (pom.xml) — fragmento
-
-```xml
-<dependencies>
-  <!-- Web + Validación -->
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-web</artifactId>
-  </dependency>
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-validation</artifactId>
-  </dependency>
-
-  <!-- Tests -->
-  <dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-test</artifactId>
-    <scope>test</scope>
-  </dependency>
-</dependencies>
-```
-
-> Si prefieres una lib dedicada para RFC 7807, puedes usar **Problem Spring Web**; si no, `ProblemDetail` es suficiente.
-
----
-
-## 12) Ejercicios propuestos
-
-1. Refactoriza un endpoint para devolver `201 Created` con `Location` y `ApiResponse.withMeta(...)`.  
-2. Implementa `@RestControllerAdvice` y migra un error clásico a **ProblemDetail** (`/errors/not-found`).  
-3. Agrega `traceId` a todas las respuestas y conéctalo al logger (MDC).  
-4. Escribe pruebas *MockMvc* que validen el shape del JSON de éxito/error.  
-5. Añade paginación a un GET y retorna `meta.page` correctamente poblado.
+- [Problem Details en Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-ann-rest-exceptions.html)
+- [Spring MVC](https://docs.spring.io/spring-framework/reference/web/webmvc.html)
+- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)

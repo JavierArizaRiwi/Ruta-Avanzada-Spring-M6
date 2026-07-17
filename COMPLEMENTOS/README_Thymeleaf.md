@@ -1,5 +1,7 @@
 # Guía Profesional de Thymeleaf en Spring Boot
 
+> **Estado curricular:** optativo de interfaz server-side. No es prerrequisito para la ruta backend/microservicios. Para HTTP imperativo nuevo se prefiere `RestClient`; `RestTemplate` se conserva aquí solo para reconocer código existente.
+
 ## Introducción
 
 Thymeleaf es un motor de plantillas moderno para Java, ampliamente utilizado en aplicaciones web con Spring Boot. Permite crear vistas HTML dinámicas, integrando datos del backend de forma segura y eficiente. Su sintaxis es intuitiva y se integra perfectamente con el modelo MVC de Spring.
@@ -180,7 +182,11 @@ En la vista:
 
 ---
 
-¿Dudas o quieres ejemplos específicos? ¡Solicítalos!
+### Dependencias del ejemplo integrado
+
+```xml
+<dependencies>
+    <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-thymeleaf</artifactId>
     </dependency>

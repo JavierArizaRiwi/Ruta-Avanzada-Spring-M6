@@ -1,5 +1,7 @@
 # Día 2 - Cache y Rendimiento con Redis en Spring Boot **con Arquitectura Hexagonal y acceso vía API Gateway**
 
+> **Estado curricular:** introducción de Semana 7 que se profundiza en Semana 8 con TTL, invalidación, métricas y Testcontainers.
+
 En esta sesión integrarás **Redis** como **adaptador secundario** de caché dentro de una **arquitectura hexagonal**.  
 El **dominio** y los **casos de uso** no dependen de Spring ni de Redis; en cambio usan **puertos** que luego implementamos con un **adaptador Redis**.  
 Todas las rutas de prueba se consumen **a través del API Gateway**.
@@ -41,10 +43,10 @@ Cliente → API Gateway → usuarios-service (adaptador de entrada: REST Control
 
 ### Redis con Docker
 ```bash
-docker run -d --name riwi-redis -p 6379:6379 redis:latest
+docker compose up -d redis
 ```
 
-> *Tip:* en Linux puedes usar `redis/redis-stack:latest` si deseas UI. Para el taller, la imagen oficial es suficiente.
+> Para mantener el laboratorio reproducible usa la imagen fijada en el Compose común. RedisInsight puede añadirse como herramienta opcional con una versión explícita.
 
 ### Gateway (recordatorio de rutas)
 ```yaml

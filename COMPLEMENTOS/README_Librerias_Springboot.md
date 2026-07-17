@@ -1,4 +1,6 @@
 # Complementos productivos para Spring Boot  
+
+> **Estado curricular:** catálogo selectivo, no lista de dependencias obligatorias. Usa el BOM de Spring Boot 4.1.x; Lombok y MapStruct se adoptan solo cuando su costo está explicado.
 ## Lombok a fondo y librerías adicionales para reducir *boilerplate* y mejorar tu DX
 
 Esta guía complementa tu base de Spring con un foco práctico en **Project Lombok** y un conjunto de librerías gratuitas que aceleran el desarrollo profesional: mapeo de DTOs, manejo de errores HTTP, resiliencia, pruebas de integración, validaciones y migraciones de base de datos. Todo con ejemplos, advertencias y *best practices*.
@@ -280,34 +282,25 @@ public interface EstudianteMapper {
 
 ---
 
-## 4) Problem Spring Web — errores HTTP RFC 7807 limpios
+## 4) Problem Details RFC 9457 con soporte nativo de Spring
 
-Estandariza respuestas de error (`application/problem+json`).
+Spring Framework proporciona `ProblemDetail`; no se necesita una librería adicional para el caso habitual.
 
-**Maven**
-```xml
-<dependency>
-  <groupId>org.zalando</groupId>
-  <artifactId>problem-spring-web-starter</artifactId>
-  <version>0.29.1</version>
-</dependency>
-```
-
-**Uso simple**
+**ControllerAdvice**
 ```java
-import org.zalando.problem.Problem;
-import org.zalando.problem.Status;
-
-throw Problem.valueOf(Status.NOT_FOUND, "Estudiante no existe");
-```
-
-**ControllerAdvice listo**
-```java
-import org.zalando.problem.spring.web.advice.ProblemHandling;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
-class GlobalProblemHandler implements ProblemHandling {}
+class GlobalProblemHandler {
+  @ExceptionHandler(EstudianteNoExisteException.class)
+  ProblemDetail notFound(EstudianteNoExisteException exception) {
+    var problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+    problem.setTitle("Estudiante no encontrado");
+    problem.setDetail(exception.getMessage());
+    problem.setProperty("code", "STUDENT_NOT_FOUND");
+    return problem;
+  }
+}
 ```
 
 Resultado estándar:
@@ -522,13 +515,6 @@ create table estudiante (id bigint primary key, nombre varchar(50) not null);
     <scope>provided</scope>
   </dependency>
 
-  <!-- Problem Spring Web -->
-  <dependency>
-    <groupId>org.zalando</groupId>
-    <artifactId>problem-spring-web-starter</artifactId>
-    <version>0.29.1</version>
-  </dependency>
-
   <!-- Resilience4j -->
   <dependency>
     <groupId>io.github.resilience4j</groupId>
@@ -630,9 +616,11 @@ public interface UsuarioMapper {
 }
 ```
 
-### 10.4 Error RFC7807 con Problem
+### 10.4 Error RFC 9457 con `ProblemDetail`
 ```java
-throw Problem.valueOf(Status.CONFLICT, "Nombre duplicado");
+var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Nombre duplicado");
+problem.setProperty("code", "DUPLICATE_NAME");
+return problem;
 ```
 
 ### 10.5 Circuit Breaker con Resilience4j

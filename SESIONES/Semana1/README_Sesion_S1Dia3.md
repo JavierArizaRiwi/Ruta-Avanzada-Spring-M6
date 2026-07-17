@@ -1,5 +1,7 @@
 # Día 3 - Configuración de Beans, Perfiles y Proyecto Base Limpio en Spring
 
+> **Estado curricular:** vigente. En nuevos laboratorios usa `@ConfigurationProperties`, Maven Wrapper y `ddl-auto=validate` con Flyway.
+
 Esta guía te lleva, paso a paso, desde una organización clásica en **Java SE (capas, POO, JDBC)** hacia un **proyecto base limpio y modular** con **Spring Framework**.  
 El objetivo es comprender **qué es un Bean**, cómo se configuran, qué son los **perfiles por entorno**, y cómo estructurar un proyecto preparado para crecer hacia arquitecturas limpias.
 
@@ -227,7 +229,7 @@ spring:
     username: sa
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
 logging:
   level:
     org.hibernate.SQL: debug
@@ -248,7 +250,7 @@ Activación del perfil:
 Terminal:
 
 ```bash
-mvn spring-boot:run -Dspring-boot.run.profiles=prod
+./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
 ```
 
 IntelliJ IDEA:
@@ -367,7 +369,7 @@ public interface EstudianteJpaRepository extends JpaRepository<EstudianteEntity,
 ## 10. Configuración en IntelliJ IDEA
 
 1. Crear proyecto con Spring Initializr.  
-2. Dependencias: Spring Web, Spring Data JPA, H2 o MySQL, Lombok.  
+2. Dependencias iniciales: Spring Web MVC, Validation, Actuator y Test; PostgreSQL/JPA se incorporan en Semana 3.
 3. Activar perfil: `SPRING_PROFILES_ACTIVE=dev`.  
 4. Habilitar Annotation Processing.  
 5. Ver Beans cargados:

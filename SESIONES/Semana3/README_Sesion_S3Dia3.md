@@ -1,19 +1,22 @@
 
-# Día  – Comparativa: Arquitectura Limpia/Hexagonal vs Arquitectura por Capas  
+# Día 3 — Testing de persistencia y preparación del refactor arquitectónico
+
+> **Estado curricular:** cierre de Semana 3 y puente hacia arquitectura de Semana 4. Las pruebas usan PostgreSQL Testcontainers, no H2 como sustituto del motor real.
 ## Persistencia y Testing Integrado con Spring Data JPA
 
-En esta sesión comprenderás cómo **Spring Data JPA** encaja dentro de una **arquitectura limpia o hexagonal**, en contraste con la arquitectura tradicional por capas.  
+En esta sesión comprenderás cómo **Spring Data JPA** encaja dentro de una **arquitectura limpia o hexagonal**, en contraste con la arquitectura tradicional por capas.
 También aprenderás a probar la persistencia y los casos de uso usando **JUnit 5, Mockito** y el principio de **inversión de dependencias (DIP)**.
 
 ---
 
 ## 1) Objetivo del día
 
-- Comparar arquitectura por capas vs arquitectura hexagonal.  
-- Implementar un flujo completo de persistencia con puertos y adaptadores.  
-- Aislar el dominio del framework mediante mappers y contratos.  
-- Probar la integración entre capas con `@DataJpaTest` y `@MockBean`.  
-- Comprender cómo Spring Boot facilita la inyección de dependencias y las transacciones.  
+- Probar repositorios, migraciones y consultas sobre PostgreSQL real.
+- Comparar arquitectura por capas vs arquitectura hexagonal como preparación de Semana 4.
+- Implementar un flujo completo de persistencia con puertos y adaptadores.
+- Aislar el dominio del framework mediante mappers y contratos.
+- Probar la integración entre capas con `@DataJpaTest` y `@MockitoBean` cuando exista una colaboración Spring que reemplazar.
+- Comprender cómo Spring Boot facilita la inyección de dependencias y las transacciones.
 
 ---
 
@@ -25,7 +28,7 @@ También aprenderás a probar la persistencia y los casos de uso usando **JUnit 
 Controller → Service → Repository → Database
 ```
 
-- **Ventajas:** sencilla de entender, rápida para proyectos pequeños.  
+- **Ventajas:** sencilla de entender, rápida para proyectos pequeños.
 - **Desventajas:** alto acoplamiento, difícil de probar y mantener; el dominio depende de la infraestructura.
 
 Ejemplo de dependencia:
@@ -52,8 +55,8 @@ El problema es que el dominio **no puede ser probado ni reutilizado** sin Spring
 Dominio (Lógica) ↔ Puerto de Salida (Repositorio) ← Adaptador de Salida (JPA)
 ```
 
-- El dominio **no depende** del framework.  
-- Las dependencias apuntan **hacia adentro** (principio DIP).  
+- El dominio **no depende** del framework.
+- Las dependencias apuntan **hacia adentro** (principio DIP).
 - Se facilita la prueba y reemplazo de la infraestructura.
 
 ```java
@@ -215,6 +218,8 @@ class RegistrarEstudianteServiceTest {
 ```
 
 ### 5.2 Test de integración JPA
+
+Configura `@DataJpaTest` con un `PostgreSQLContainer` y `@DynamicPropertySource`, siguiendo el ejemplo de Día 1. Así se validan dialecto, índices y migraciones reales.
 ```java
 @DataJpaTest
 class EstudianteJpaAdapterTest {
@@ -238,7 +243,7 @@ class EstudianteControllerTest {
     @Autowired
     private MockMvc mvc;
 
-    @MockBean
+    @MockitoBean
     private RegistrarEstudianteService service;
 
     @Test
@@ -268,18 +273,18 @@ class EstudianteControllerTest {
 
 ## 7) Configuración IntelliJ IDEA
 
-1. Crear el proyecto desde **Spring Initializr** con dependencias:  
-   `Spring Web`, `Spring Data JPA`, `H2 Database`, `Lombok`, `Spring Boot Test`.  
+1. Crear el proyecto desde **Spring Initializr** con dependencias:
+   `Spring Web`, `Spring Data JPA`, PostgreSQL Driver, Flyway PostgreSQL, Testcontainers y Spring Boot Test.
 
-2. Activar `Annotation Processing`:  
-   `Settings → Build → Compiler → Annotation Processors → Enable annotation processing`.  
+2. Activar `Annotation Processing`:
+   `Settings → Build → Compiler → Annotation Processors → Enable annotation processing`.
 
-3. Ejecutar pruebas:  
-   - `Ctrl+Shift+F10` (Windows/Linux) / `⌘⇧R` (Mac).  
-   - Ver resultados en la pestaña *Run* o *JUnit*.  
+3. Ejecutar pruebas:
+   - `Ctrl+Shift+F10` (Windows/Linux) / `⌘⇧R` (Mac).
+   - Ver resultados en la pestaña *Run* o *JUnit*.
 
-4. Para visualizar las capas:  
-   `File → Project Structure → Diagrams → Show Dependencies`.  
+4. Para visualizar las capas:
+   `File → Project Structure → Diagrams → Show Dependencies`.
 
 ---
 
@@ -297,7 +302,7 @@ class EstudianteControllerTest {
 
 ## 9) Resultado esperado
 
-- Proyecto con arquitectura limpia funcionando con JPA.  
-- Dominio completamente aislado del framework.  
-- Pruebas de dominio, infraestructura y REST exitosas.  
-- Comparativa práctica entre arquitectura tradicional y hexagonal comprendida.  
+- Proyecto con arquitectura limpia funcionando con JPA.
+- Dominio completamente aislado del framework.
+- Pruebas de dominio, infraestructura y REST exitosas.
+- Comparativa práctica entre arquitectura tradicional y hexagonal comprendida.

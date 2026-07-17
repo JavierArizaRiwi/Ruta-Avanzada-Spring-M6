@@ -1,5 +1,7 @@
 
-# Guía Profesional: Persistencia JPA + Validación REST + Manejo de Errores + Paginación en Spring Boot 3
+# Persistencia JPA, validación REST, errores y paginación con Spring Boot 4
+
+> **Estado curricular:** material consolidado en Semanas 2–4. La línea actual usa Spring Boot 4.1.x, RFC 9457, PostgreSQL/Flyway y Testcontainers; H2 queda como alternativa didáctica limitada.
 
 Esta guía enseña cómo construir una API REST profesional en Spring Boot, enfocada en:
 
@@ -59,7 +61,7 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create-drop # solo laboratorio H2
     open-in-view: false
   h2:
     console:
@@ -225,7 +227,7 @@ public class ConflictException extends RuntimeException {
 
 ---
 
-## 10. Manejo de errores global (RFC-7807)
+## 10. Manejo de errores global (RFC 9457)
 
 ```java
 @RestControllerAdvice

@@ -1,7 +1,9 @@
 
-# Día 1  3 – Persistencia con Spring Data JPA y MySQL  
+# Día 1 — Persistencia con Spring Data JPA y PostgreSQL
 
-En esta sesión aprenderás a **persistir datos de manera profesional** utilizando **Spring Data JPA** y **MySQL**. Comprenderás cómo integrar esta capa dentro de una arquitectura limpia o hexagonal sin violar la independencia del dominio.
+> **Estado curricular:** actualizado dentro de Semana 3. PostgreSQL + Flyway reemplazan MySQL/H2 como persistencia representativa.
+
+En esta sesión aprenderás a persistir datos con **Spring Data JPA**, **PostgreSQL** y migraciones **Flyway**. Comprenderás cómo integrar el adaptador sin trasladar decisiones de infraestructura al resto del sistema.
 
 ---
 
@@ -32,8 +34,13 @@ Spring Data JPA implementa JPA y simplifica el acceso a los datos mediante **rep
   </dependency>
 
   <dependency>
-    <groupId>mysql</groupId>
-    <artifactId>mysql-connector-j</artifactId>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+  </dependency>
+  <dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-database-postgresql</artifactId>
   </dependency>
 
   <dependency>
@@ -51,19 +58,18 @@ Spring Data JPA implementa JPA y simplifica el acceso a los datos mediante **rep
 ```yaml
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/academico_db?useSSL=false&serverTimezone=UTC
-    username: root
-    password: root
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/riwi_learning}
+    username: ${DB_USER:riwi}
+    password: ${DB_PASSWORD:riwi_local_only}
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
         format_sql: true
-        show_sql: true
+  flyway:
+    enabled: true
 ```
 
 ---
@@ -202,7 +208,7 @@ public class EstudianteMapper {
 
 ---
 
-## 7) Pruebas con H2 y `@DataJpaTest`
+## 7) Pruebas con PostgreSQL Testcontainers y `@DataJpaTest`
 
 ```java
 // test/java/com/riwi/acad/jpa/EstudianteRepositoryTest.java
@@ -213,10 +219,27 @@ import com.riwi.academico.infrastructure.jpa.repository.EstudianteJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
+@Testcontainers
 class EstudianteRepositoryTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgres:18-alpine");
+
+    @DynamicPropertySource
+    static void datasource(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
 
     @Autowired
     private EstudianteJpaRepository repo;
@@ -237,9 +260,9 @@ class EstudianteRepositoryTest {
 1. **Plugins necesarios:**  
    Spring Boot, Database Tools, Lombok, SonarLint.
 
-2. **Configurar conexión MySQL:**  
-   - `View → Tool Windows → Database → + → Data Source → MySQL`
-   - Verifica conexión `jdbc:mysql://localhost:3306/academico_db`
+2. **Configurar conexión PostgreSQL:**
+   - `View → Tool Windows → Database → + → Data Source → PostgreSQL`
+   - Verifica conexión `jdbc:postgresql://localhost:5432/riwi_learning`
 
 3. **Atajos útiles:**  
    - Buscar clases: `Ctrl+N` / `⌘O`  
@@ -257,7 +280,7 @@ class EstudianteRepositoryTest {
 |-------------|------------|
 | JPA | Simplifica la persistencia con ORM y reduce código repetido |
 | Spring Data JPA | Genera repositorios automáticamente |
-| H2 | Permite testear sin depender de MySQL |
+| PostgreSQL Testcontainers | Prueba el mismo motor y dialecto usados en el laboratorio |
 | Mapper | Evita acoplar el dominio al framework |
 
 ---
@@ -267,4 +290,4 @@ class EstudianteRepositoryTest {
 - Base de datos configurada y sincronizada con las entidades JPA.  
 - Entidades persistentes y relaciones funcionales.  
 - Pruebas unitarias exitosas con `@DataJpaTest`.  
-- Repositorios funcionales listos para integrarse a los puertos del dominio.  
+- Repositorios funcionales listos para integrarse a los puertos del dominio.

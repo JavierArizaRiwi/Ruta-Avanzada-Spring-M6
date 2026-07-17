@@ -1,5 +1,7 @@
 # Día 4 — Introducción a los Servicios Web y Servidores de Aplicaciones
 
+> **Estado curricular:** lectura de nivelación para Semanas 0–2. Spring Boot usa servidor embebido por defecto; un servidor de aplicaciones externo no es requisito.
+
 En este módulo entenderás **qué son los servicios web**, por qué surgen en el mundo Java y **por qué necesitamos un servidor de aplicaciones** para desplegarlos.  
 Este conocimiento marca la transición natural desde tus programas en **Java SE (de escritorio o consola)** hacia **Java empresarial (Spring, Jakarta EE, microservicios, etc.)**.
 

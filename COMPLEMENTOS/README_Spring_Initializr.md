@@ -1,5 +1,9 @@
 Initializr# Guía Detallada sobre Spring Initializr
 
+# Spring Initializr, Maven Wrapper y proyecto base
+
+> **Estado curricular:** preparación de Semana 1. Java 17 es la base, Java 21 el runtime recomendado y las versiones se obtienen de Initializr/BOM, no de fragmentos copiados sin parent.
+
 ## Introducción
 
 **Spring Initializr** es una herramienta oficial de Spring que te
@@ -54,7 +58,7 @@ MVC o WebFlux)
 
   **Language**      Lenguaje de programación        Java
 
-  **Spring Boot     Versión del framework           3.3.3
+  **Spring Boot     Versión estable verificada      4.1.0
   Version**                                         
 
   **Group**         Nombre del grupo base del       com.codeup
@@ -150,6 +154,12 @@ Ejemplo generado automáticamente por Spring Initializr:
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+        <relativePath/>
+    </parent>
     <groupId>com.codeup</groupId>
     <artifactId>academico-spring</artifactId>
     <version>0.0.1-SNAPSHOT</version>
@@ -223,7 +233,7 @@ spring.application.name=academico-spring
 spring.h2.console.enabled=true
 spring.datasource.url=jdbc:h2:mem:testdb
 spring.datasource.username=sa
-spring.jpa.hibernate.ddl-auto=update
+spring.jpa.hibernate.ddl-auto=create-drop # solo laboratorio H2
 logging.level.org.hibernate.SQL=debug
 ```
 

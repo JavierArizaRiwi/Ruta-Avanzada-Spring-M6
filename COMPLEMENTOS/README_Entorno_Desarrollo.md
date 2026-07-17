@@ -1,5 +1,7 @@
 # Historias de Usuario -- Semana 1 (Spring + IntelliJ IDEA)
 
+> **Estado curricular:** preparación de Semana 1. Java 17 es la base y Java 21 el runtime recomendado; Maven Wrapper y Docker Compose son obligatorios en los laboratorios nuevos.
+
 ## Sesión Día 1 -- Fundamentos y Configuración de Proyecto Spring
 
 Este documento guía a personas que nunca han trabajado con **Spring**.
@@ -206,7 +208,7 @@ public class EstudianteController {
 spring.h2.console.enabled=true
 spring.h2.console.path=/h2
 spring.datasource.url=jdbc:h2:mem:acad;DB_CLOSE_DELAY=-1;MODE=MySQL
-spring.jpa.hibernate.ddl-auto=update
+spring.jpa.hibernate.ddl-auto=create-drop # solo laboratorio H2
 ```
 
 ------------------------------------------------------------------------

@@ -1,5 +1,19 @@
 # Día 1 - De Java SE a Spring: IoC, DI, Beans, Estereotipos y Ciclo de Vida
 
+> **Estado curricular:** vigente. Base: Java 17; ejecución recomendada: Java 21; inyección por constructor. Consulta `COMPLEMENTOS/README_Java_17_21.md`.
+
+## Preparación obligatoria del módulo
+
+Antes de estudiar el contenedor, cada estudiante debe crear su repositorio de Riwi Learning Platform con Spring Initializr, Java 17, Maven Wrapper y una prueba de arranque en Java 17 y 21.
+
+```bash
+java -version
+./mvnw -version
+./mvnw clean verify
+```
+
+Dependencias iniciales: Spring Web MVC, Validation, Actuator y Test. PostgreSQL, Security, Redis y Kafka se incorporan cuando la ruta presenta el problema que resuelven.
+
 ## Introducción general
 
 Este primer día marca la transición desde la **programación estructurada en Java SE** hacia el **ecosistema Spring**, uno de los frameworks empresariales más potentes del mundo Java.  
@@ -231,7 +245,7 @@ public class ReporteTemporal { }
 
 1. **Crear proyecto:**  
    - `File → New → Project → Spring Initializr`  
-   - Dependencias: *Spring Context*, *Spring Web*, *Spring Data JPA*, *H2 Database*, *Lombok*.
+   - Dependencias iniciales: Spring Web MVC, Validation, Actuator y Test. JPA/PostgreSQL se agregan en Semana 3; Lombok es opcional.
 
 2. **Estructurar paquetes:**
    ```

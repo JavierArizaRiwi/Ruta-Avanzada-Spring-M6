@@ -1,698 +1,189 @@
+# Microservicios con Java y Spring Boot actuales
 
+> **Estado curricular:** guía avanzada para `SESIONES/Semana13` a `Semana15`. Se estudia después del monolito modular, Kafka, outbox, Docker y observabilidad.
 
-# Guía Profesional y Funcional: Microservicios con Spring Boot, Node.js y Docker Compose
+## Objetivos
 
-> **Propósito:** Esta guía te lleva paso a paso, con comentarios y explicaciones, para crear dos microservicios interoperables (Java y Node.js), orquestados con Docker Compose y conectados a MySQL. Además, incluye cómo consumir el microservicio Node.js desde Java usando RestTemplate/WebClient.
+- Distinguir microservicio, monolito modular y monolito distribuido.
+- Extraer una capacidad por razones de negocio u operación, no por entidad.
+- Diseñar datos, contratos, seguridad, resiliencia y observabilidad distribuidos.
+- Ejecutar todo localmente con Docker Compose y herramientas gratuitas.
 
----
+## Cuándo usar microservicios
 
-## 1. Requisitos Previos
+Se justifican cuando un límite de negocio es estable y necesita autonomía de despliegue, escalado, disponibilidad o equipo. No se justifican porque una aplicación tenga muchas tablas o porque “sea arquitectura moderna”.
 
-- Docker y Docker Compose instalados ([descarga aquí](https://docs.docker.com/get-docker/)).
-- Java 17+ y Maven ([descarga aquí](https://adoptium.net/)).
-- Node.js v16+ ([descarga aquí](https://nodejs.org/)).
-- Postman o curl para pruebas.
+Costos inevitables:
 
----
+- latencia y fallos de red;
+- consistencia eventual;
+- contratos y compatibilidad;
+- observabilidad distribuida;
+- más pipelines, imágenes, configuración y parches;
+- pruebas y operación más complejas.
 
-## 2. Estructura del Proyecto
+## Evolución recomendada
+
+```mermaid
+flowchart LR
+    M[Monolito modular] --> E[Eventos internos]
+    E --> K[Kafka + Outbox]
+    K --> X[Extraer notifications-service]
+    X --> G[Gateway y resiliencia]
+    G --> O[Observabilidad distribuida]
+```
+
+Riwi Learning Platform extrae primero notificaciones: tolera consistencia eventual, consume eventos y puede fallar sin deshacer una inscripción ya confirmada.
+
+## Servicios educativos
 
 ```text
-micro-edtech/
-  catalog-service/        # Microservicio Java Spring Boot
-  lms-service/            # Microservicio Node.js Express
-  docker-compose.yml      # Orquestador de servicios
+learning-platform-api/       # rutas, módulos, inscripciones
+notifications-service/      # consume EnrollmentCreated
+api-gateway/                 # borde HTTP, solo en etapa posterior
 ```
 
----
+Cada servicio Spring tiene su propio Wrapper, `pom.xml`, imagen, configuración, tests y ownership de datos. No se comparte un paquete de entidades JPA.
 
-## 3. Microservicio 1: catalog-service (Spring Boot)
+## Contrato de evento
 
-
-### 3.2. Dominio y arquitectura hexagonal
-**Dominio:**
 ```java
-// src/main/java/com/edtech/catalog/domain/Curso.java
-package com.edtech.catalog.domain;
-
-public class Curso {
-  private Long id;
-  private String nombre;
-  private String estado; // ACTIVO / INACTIVO
-
-  public Curso(Long id, String nombre, String estado) {
-    this.id = id;
-    this.nombre = nombre;
-    this.estado = estado;
-  }
-
-  // Getters
-  public Long getId() { return id; }
-  public String getNombre() { return nombre; }
-  public String getEstado() { return estado; }
-}
+public record EnrollmentCreatedV1(
+    UUID eventId,
+    Instant occurredAt,
+    UUID enrollmentId,
+    UUID coderId,
+    UUID learningRouteId
+) {}
 ```
 
-**Puerto del dominio:**
+El contrato no expone entidades ni información innecesaria. La clave Kafka es `enrollmentId`; el consumidor registra `eventId` antes de producir efectos para ser idempotente.
+
+## Consumidor Spring Kafka
+
 ```java
-// src/main/java/com/edtech/catalog/domain/CursoRepositoryPort.java
-package com.edtech.catalog.domain;
-
-import java.util.List;
-
-public interface CursoRepositoryPort {
-  List<Curso> listarCursos();
-}
-```
-
-**Caso de uso:**
-```java
-// src/main/java/com/edtech/catalog/application/ListarCursosService.java
-package com.edtech.catalog.application;
-
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-import java.util.List;
-
-public class ListarCursosService {
-  private final CursoRepositoryPort repository;
-  public ListarCursosService(CursoRepositoryPort repository) {
-    this.repository = repository;
-  }
-  public List<Curso> ejecutar() {
-    return repository.listarCursos();
-  }
-}
-```
-
-**Adaptador en memoria:**
-```java
-// src/main/java/com/edtech/catalog/infrastructure/InMemoryCursoAdapter.java
-package com.edtech.catalog.infrastructure;
-
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-import org.springframework.stereotype.Component;
-import java.util.List;
-
 @Component
-public class InMemoryCursoAdapter implements CursoRepositoryPort {
-  @Override
-  public List<Curso> listarCursos() {
-    return List.of(
-      new Curso(1L, "Módulo 5 - Persistencia", "ACTIVO"),
-      new Curso(2L, "Módulo 6 - Frameworks", "ACTIVO")
-    );
-  }
-}
-```
+final class EnrollmentCreatedListener {
+    private final NotifyEnrollmentUseCase useCase;
 
-**Controlador REST:**
-```java
-// src/main/java/com/edtech/catalog/infrastructure/rest/CursoController.java
-package com.edtech.catalog.infrastructure.rest;
+    EnrollmentCreatedListener(NotifyEnrollmentUseCase useCase) {
+        this.useCase = useCase;
+    }
 
-import com.edtech.catalog.application.ListarCursosService;
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
-import java.util.List;
-
-@RestController
-public class CursoController {
-  private final ListarCursosService listarCursosService;
-  public CursoController(CursoRepositoryPort repositoryPort) {
-    this.listarCursosService = new ListarCursosService(repositoryPort);
-  }
-  @GetMapping("/cursos")
-  public List<Curso> listar() {
-    return listarCursosService.ejecutar();
-  }
-}
-```
-
-**Dockerfile:**
-```dockerfile
-FROM maven:3.9-eclipse-temurin-17 AS build
-WORKDIR /app
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
-
-FROM eclipse-temurin:17-jre
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
-
----
-
-## 4. Microservicio 2: lms-service (Node.js)
-
-
-### 4.2. Código del servicio Node.js
-```javascript
-// lms-service/index.js
-const express = require('express');
-const app = express();
-app.use(express.json());
-
-const entregas = [];
-
-// Endpoint para crear una entrega
-app.post('/entregas', (req, res) => {
-  const entrega = {
-    id: entregas.length + 1,
-    coderId: req.body.coderId,
-    moduloId: req.body.moduloId,
-    descripcion: req.body.descripcion
-  };
-  entregas.push(entrega);
-  res.status(201).json(entrega);
-});
-
-// Endpoint para listar entregas
-app.get('/entregas', (req, res) => {
-  res.json(entregas);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`lms-service escuchando en puerto ${PORT}`);
-});
-```
-
-**Dockerfile Node.js:**
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev
-COPY . .
-EXPOSE 3000
-CMD ["node", "index.js"]
-```
-
----
-
-## 5. Orquestación con docker-compose.yml
-
-
-```yaml
-version: '3.8'
-services:
-  catalog-service:
-    build: ./catalog-service
-    container_name: catalog-service
-    ports:
-      - "8080:8080"
-
-  lms-service:
-    build: ./lms-service
-    container_name: lms-service
-    ports:
-      - "3000:3000"
-
-  mysql:
-    image: mysql:8
-    container_name: mysql
-    environment:
-      - MYSQL_ROOT_PASSWORD=root
-    ports:
-      - "3306:3306"
-```
-
----
-
-## 6. Comunicación entre microservicios: Consumir Node.js desde Java
-
-### 6.1. ¿Por qué?
-Permite que el microservicio Java (Spring Boot) realice peticiones HTTP al microservicio Node.js para interoperar y compartir datos.
-
-
-### 6.2. Adaptador OUT profesional para consumir Node.js desde Java
-
-#### 6.2.1. Puerto de salida (interface)
-Define el contrato en el dominio:
-```java
-// src/main/java/com/edtech/catalog/domain/EntregaServicePort.java
-package com.edtech.catalog.domain;
-
-import java.util.List;
-
-public interface EntregaServicePort {
-  List<?> obtenerEntregas();
-  // Puedes agregar otros métodos para POST, PUT, DELETE, etc.
-}
-```
-
-#### 6.2.2. Adaptador OUT (implementación RestConsumer)
-Implementa el puerto en infraestructura:
-```java
-// src/main/java/com/edtech/catalog/infrastructure/rest/EntregaRestConsumerAdapter.java
-package com.edtech.catalog.infrastructure.rest;
-
-import com.edtech.catalog.domain.EntregaServicePort;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.http.ResponseEntity;
-import java.util.List;
-
-@Component
-public class EntregaRestConsumerAdapter implements EntregaServicePort {
-  private final RestTemplate restTemplate = new RestTemplate();
-
-  @Override
-  public List<?> obtenerEntregas() {
-    String url = "http://lms-service:3000/entregas"; // Usar el nombre del servicio en docker-compose
-    ResponseEntity<List> response = restTemplate.getForEntity(url, List.class);
-    return response.getBody();
-  }
-}
-```
-
-#### 6.2.3. Uso en el caso de uso o controlador
-Inyecta el adaptador OUT donde lo necesites:
-```java
-// src/main/java/com/edtech/catalog/application/ConsultarEntregasService.java
-package com.edtech.catalog.application;
-
-import com.edtech.catalog.domain.EntregaServicePort;
-import java.util.List;
-
-public class ConsultarEntregasService {
-  private final EntregaServicePort entregaServicePort;
-  public ConsultarEntregasService(EntregaServicePort entregaServicePort) {
-    this.entregaServicePort = entregaServicePort;
-  }
-  public List<?> consultar() {
-    return entregaServicePort.obtenerEntregas();
-  }
-}
-```
-
-**Ventajas:**
-- El dominio no depende de RestTemplate ni de detalles técnicos.
-- Puedes cambiar la implementación del adaptador OUT fácilmente (por ejemplo, usar WebClient, Feign, etc.).
-- Facilita el testing y el desacoplamiento.
-
----
-
-### 6.3. Ejemplo usando WebClient (Spring Boot >= 2.x)
-Agrega la dependencia en tu `pom.xml`:
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-webflux</artifactId>
-</dependency>
-```
-
-Código ejemplo:
-```java
-// src/main/java/com/edtech/catalog/infrastructure/rest/EntregaWebClientConsumer.java
-package com.edtech.catalog.infrastructure.rest;
-
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import java.util.List;
-
-@Component
-public class EntregaWebClientConsumer {
-    private final WebClient webClient = WebClient.create("http://lms-service:3000");
-
-    public List<?> obtenerEntregas() {
-        return webClient.get()
-                .uri("/entregas")
-                .retrieve()
-                .bodyToFlux(Object.class)
-                .collectList()
-                .block();
+    @KafkaListener(topics = "learning.enrollment-created.v1")
+    void on(EnrollmentCreatedV1 event) {
+        useCase.notifyOnce(event);
     }
 }
 ```
 
-**Notas:**
-- Usa el nombre del servicio (`lms-service`) como host en Docker Compose para comunicación interna.
-- Puedes consumir cualquier endpoint expuesto por Node.js desde Java.
-- Para POST, usa `postForEntity` (RestTemplate) o `.post()` (WebClient).
+Retry y dead-letter topic se configuran explícitamente. Un mensaje inválido no debe bloquear indefinidamente la partición.
 
----
+## Comunicación HTTP
 
-## 7. Levantar y probar los microservicios
-
-
-### 7. Levantar y probar los microservicios
-
-#### 7.1. Levantar todo
-```bash
-docker-compose up --build
-```
-
-#### 7.2. Probar los endpoints
-- Spring Boot: `GET http://localhost:8080/cursos`
-- Node.js: `POST http://localhost:3000/entregas` con JSON:
-  ```json
-  {
-    "coderId": 1,
-    "moduloId": 2,
-    "descripcion": "Mi entrega de prueba"
-  }
-  ```
-
-#### 7.3. Verificar comunicación
-- Ambos servicios pueden comunicarse por red interna de Docker.
-- Puedes agregar llamadas HTTP entre servicios usando la URL del servicio (ejemplo: `http://lms-service:3000/entregas` desde Java).
-
----
-
-## 8. Checklist y recomendaciones
-
-
-- [x] Cada microservicio tiene su propio Dockerfile.
-- [x] docker-compose.yml orquesta todos los servicios.
-- [x] Prueba los endpoints con Postman/curl.
-- [x] Documenta cada paso y agrega comentarios en el código.
-- [x] Usa nombres claros y consistentes.
-
-**Recomendaciones:**
-- Mantén los servicios independientes y desacoplados.
-- Usa variables de entorno para configuración sensible.
-- Agrega tests unitarios y de integración.
-- Documenta el flujo de datos y dependencias.
-
----
-
-## 9. Preguntas Frecuentes (FAQ)
-
-
-**¿Puedo agregar más servicios?** Sí, solo añade más bloques en docker-compose.yml.
-
-**¿Cómo conecto los servicios a MySQL?** Configura la URL de conexión en cada microservicio usando el nombre del servicio `mysql` como host.
-
-**¿Cómo escalo los servicios?** Usa la opción `scale` en Docker Compose o Kubernetes para producción.
-
----
-
-**Autor:** Javier Ariza  
-**Versión:** 2.1  
-**Descripción:** Guía profesional, funcional y comentada para crear microservicios interoperables con Spring Boot, Node.js y Docker Compose. Incluye ejemplos de consumo entre servicios y adaptador OUT.
-
----
-
-**Autor:** Javier Ariza  
-**Versión:** 2.1  
-**Descripción:** Guía profesional, funcional y comentada para crear microservicios interoperables con Spring Boot, Node.js y Docker Compose. Incluye ejemplos de consumo entre servicios.
-
----
-
-## 0. Requisitos previos
-
-- Tener **Docker** y **Docker Compose** instalados.
-- Tener **Java 17** (o el que use tu Spring Boot) y **Maven**.
-- Tener **Node.js** (v16+).
-- Saber usar una terminal (cd, ls, etc.).
-- Postman o curl para probar.
-
-La idea es que al final puedas pararte frente a tus coders y decir: “esto que ven son **dos servicios distintos** escritos en lenguajes distintos, pero orquestados por Docker”.
-
----
-
-## 1. Estructura del proyecto
-
-Vamos a crear una carpeta de trabajo:
-
-```text
-micro-edtech/
-  catalog-service/        <-- Spring Boot
-  lms-service/            <-- Node.js
-  docker-compose.yml
-```
-
-Trabajaremos dentro de `micro-edtech/`.
-
----
-
-## 2. Microservicio 1 (Spring Boot): catalog-service
-
-### 2.1. ¿Qué va a hacer?
-Será el servicio que expone **cursos** o **módulos**. Por ahora solo tendrá:
-- `GET /cursos` → devuelve una lista fija (luego la conectamos a MySQL)
-- Arquitectura “tipo hexagonal”: tendremos dominio y adaptador REST claro.
-
-### 2.2. Crear el proyecto
-Puedes crear el proyecto desde https://start.spring.io (Spring Initializr) con estas dependencias:
-
-- Spring Web
-- Spring Data JPA
-- MySQL Driver
-- Lombok (opcional)
-
-Nombre: `catalog-service`  
-Group: `com.edtech`  
-Package: `com.edtech.catalog`
-
-Descarga el zip y mételo dentro de `micro-edtech/catalog-service`.
-
-### 2.3. Dominio sencillo
+Para código imperativo nuevo se usa `RestClient`; `WebClient` se reserva para un flujo reactivo justificado.
 
 ```java
-// src/main/java/com/edtech/catalog/domain/Curso.java
-package com.edtech.catalog.domain;
-
-public class Curso {
-    private Long id;
-    private String nombre;
-    private String estado; // ACTIVO / INACTIVO
-
-    public Curso(Long id, String nombre, String estado) {
-        this.id = id;
-        this.nombre = nombre;
-        this.estado = estado;
-    }
-
-    public Long getId() { return id; }
-    public String getNombre() { return nombre; }
-    public String getEstado() { return estado; }
-}
-```
-
-### 2.4. Puerto del dominio
-
-```java
-// src/main/java/com/edtech/catalog/domain/CursoRepositoryPort.java
-package com.edtech.catalog.domain;
-
-import java.util.List;
-
-public interface CursoRepositoryPort {
-    List<Curso> listarCursos();
-}
-```
-
-### 2.5. Servicio de aplicación (caso de uso)
-
-```java
-// src/main/java/com/edtech/catalog/application/ListarCursosService.java
-package com.edtech.catalog.application;
-
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-
-import java.util.List;
-
-public class ListarCursosService {
-
-    private final CursoRepositoryPort repository;
-
-    public ListarCursosService(CursoRepositoryPort repository) {
-        this.repository = repository;
-    }
-
-    public List<Curso> ejecutar() {
-        return repository.listarCursos();
+@Configuration
+class HttpClientsConfig {
+    @Bean
+    RestClient progressClient(RestClient.Builder builder,
+                              @Value("${clients.progress.base-url}") String baseUrl) {
+        return builder.baseUrl(baseUrl).build();
     }
 }
 ```
 
-### 2.6. Adaptador en memoria (para arrancar rápido)
+Toda llamada remota requiere timeout. Retry solo aplica a errores transitorios y operaciones idempotentes. Circuit breaker evita insistir sobre una dependencia degradada; no repara el servicio.
 
-```java
-// src/main/java/com/edtech/catalog/infrastructure/InMemoryCursoAdapter.java
-package com.edtech.catalog.infrastructure;
+## Datos y consistencia
 
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-import org.springframework.stereotype.Component;
+- Base de datos por servicio, aunque Compose ejecute un solo servidor PostgreSQL con bases separadas para el laboratorio.
+- No hacer joins entre bases de servicios.
+- Publicar eventos con transactional outbox.
+- Modelar compensaciones cuando una operación abarque capacidades distintas.
+- Mantener vistas locales/materializadas para consultas que no deben hacer fan-out.
 
-import java.util.List;
+## Descubrimiento y configuración
 
-@Component
-public class InMemoryCursoAdapter implements CursoRepositoryPort {
+En Docker Compose, los nombres de servicio proporcionan DNS. Variables de entorno y archivos de configuración bastan para el laboratorio. Eureka y Config Server se comparan cuando existe una necesidad real de registro dinámico o configuración centralizada; no son obligatorios.
 
-    @Override
-    public List<Curso> listarCursos() {
-        return List.of(
-                new Curso(1L, "Módulo 5 - Persistencia", "ACTIVO"),
-                new Curso(2L, "Módulo 6 - Frameworks", "ACTIVO")
-        );
-    }
-}
-```
+Si se usa Spring Cloud con Boot 4.1.x, importar el BOM Spring Cloud 2025.1.x. Nunca fijar individualmente versiones de Gateway, Config y Eureka.
 
-### 2.7. Controlador REST
+## Gateway
 
-```java
-// src/main/java/com/edtech/catalog/infrastructure/rest/CursoController.java
-package com.edtech.catalog.infrastructure.rest;
+Responsabilidades apropiadas:
 
-import com.edtech.catalog.application.ListarCursosService;
-import com.edtech.catalog.domain.Curso;
-import com.edtech.catalog.domain.CursoRepositoryPort;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+- terminación TLS en un entorno real;
+- autenticación inicial y propagación segura de identidad;
+- routing, CORS, rate limiting y observabilidad de borde.
 
-import java.util.List;
+No debe contener reglas de inscripción, composición compleja ni acceso a bases de datos. Cada servicio vuelve a autorizar el recurso que protege.
 
-@RestController
-public class CursoController {
+## Observabilidad
 
-    private final ListarCursosService listarCursosService;
+Cada servicio expone su propio health y métricas internas. Prometheus raspa targets por servicio/instancia; el Gateway no reemplaza esta visibilidad. Propagar correlation/trace context tanto en HTTP como en metadatos de eventos.
 
-    public CursoController(CursoRepositoryPort repositoryPort) {
-        this.listarCursosService = new ListarCursosService(repositoryPort);
-    }
+Métricas mínimas:
 
-    @GetMapping("/cursos")
-    public List<Curso> listar() {
-        return listarCursosService.ejecutar();
-    }
-}
-```
+- latencia y errores HTTP;
+- pools de conexiones;
+- consumer lag y DLT;
+- profundidad/edad del outbox;
+- circuit breaker y timeouts;
+- métricas de negocio sin tags de alta cardinalidad.
 
-### 2.8. Dockerfile para el catalog-service
+## Pruebas
 
-```dockerfile
-FROM maven:3.9-eclipse-temurin-17 AS build
-WORKDIR /app
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
+1. Unitarias de dominio/casos de uso.
+2. Integración de adaptadores con PostgreSQL/Kafka Testcontainers.
+3. Contratos HTTP y eventos.
+4. End-to-end pequeño para caminos críticos.
+5. Pruebas de degradación: latencia, caída, duplicado y recuperación.
 
-FROM eclipse-temurin:17-jre
-WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
+No construir una suite E2E gigante que deba arrancar toda la organización para dar feedback.
 
----
-
-## 3. Microservicio 2 (Node.js): lms-service
-
-### 3.1. Crear el proyecto
+## Infraestructura local
 
 ```bash
-mkdir lms-service
-cd lms-service
-npm init -y
-npm install express
+# Crea compose.yml siguiendo COMPLEMENTOS/README_Infraestructura_Local.md
+docker compose config
+docker compose up -d
 ```
 
-### 3.2. Código del servicio
+Los proyectos del estudiante pueden añadirse a un Compose propio y conectarse a la misma red. Kafka se anuncia como `kafka:29092` entre contenedores y `localhost:9092` desde el host.
 
-```javascript
-// lms-service/index.js
-const express = require('express');
-const app = express();
-app.use(express.json());
+## Antipatrones
 
-const entregas = [];
+- servicio por tabla;
+- base de datos o entidades compartidas;
+- cadenas síncronas largas;
+- retry sin timeout/idempotencia;
+- usar Kafka como RPC;
+- confiar toda autorización al Gateway;
+- desplegar juntos servicios supuestamente independientes;
+- copiar librerías comunes con dominio mutable.
 
-app.post('/entregas', (req, res) => {
-  const entrega = {
-    id: entregas.length + 1,
-    coderId: req.body.coderId,
-    moduloId: req.body.moduloId,
-    descripcion: req.body.descripcion
-  };
-  entregas.push(entrega);
-  res.status(201).json(entrega);
-});
+## Laboratorio obligatorio
 
-app.get('/entregas', (req, res) => {
-  res.json(entregas);
-});
+1. Escribir ADR de extracción de notificaciones.
+2. Crear `notifications-service` Java/Spring.
+3. Consumir `EnrollmentCreatedV1` idempotentemente.
+4. Probar mensaje duplicado y caída temporal de Kafka/servicio.
+5. Mostrar métricas y logs correlacionados.
+6. Defender por qué el resto continúa en el monolito.
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`lms-service escuchando en puerto ${PORT}`);
-});
-```
+## Preguntas de entrevista
 
-### 3.3. Dockerfile para Node
+- ¿Qué es un monolito distribuido?
+- ¿Por qué base de datos por servicio?
+- ¿Qué diferencia retry, circuit breaker y bulkhead?
+- ¿Cómo evolucionar un contrato de evento?
+- ¿Cuándo conservarías un monolito modular?
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev
-COPY . .
-EXPOSE 3000
-CMD ["node", "index.js"]
-```
+## Recursos oficiales
 
----
-
-## 4. docker-compose.yml
-
-En la carpeta raíz `micro-edtech/`:
-
-```yaml
-version: '3.8'
-
-services:
-  catalog-service:
-    build: ./catalog-service
-    container_name: catalog-service
-    ports:
-      - "8080:8080"
-
-  lms-service:
-    build: ./lms-service
-    container_name: lms-service
-    ports:
-      - "3000:3000"
-
-  mysql:
-    image: mysql:8
-    container_name: mysql
-    environment:
-      - MYSQL_ROOT_PASSWORD=root
-    ports:
-      - "3306:3306"
-```
-
-Levantar:
-
-```bash
-docker-compose up --build
-```
-
-Probar:
-- `GET http://localhost:8080/cursos`
-- `POST http://localhost:3000/entregas` con un JSON
-
----
-
-## 5. Qué mostrarle a los estudiantes
-
-1. Que son **dos proyectos distintos**.
-2. Que Docker los pone en la misma red.
-3. Que uno está en Java y otro en Node y no pasa nada.
-4. Que luego puedes meter un gateway y seguridad.
-
----
-
-Fin ✅
+- [Spring Cloud](https://spring.io/projects/spring-cloud/)
+- [Spring Cloud Gateway](https://docs.spring.io/spring-cloud-gateway/reference/)
+- [Spring for Apache Kafka](https://docs.spring.io/spring-kafka/reference/)
+- [Spring Modulith](https://docs.spring.io/spring-modulith/reference/)

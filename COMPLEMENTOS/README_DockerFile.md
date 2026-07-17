@@ -6,6 +6,8 @@ ps:
 
 # Guía Profesional: Dockerfile y Despliegue de Aplicaciones Spring Boot
 
+> **Estado curricular:** referencia para `SESIONES/Semana12`. Los laboratorios usan Maven Wrapper, usuario no-root, healthcheck e imágenes fijadas.
+
 Esta guía explica cómo crear, optimizar y desplegar imágenes Docker para aplicaciones Java Spring Boot, incluyendo buenas prácticas, ejemplos, recomendaciones y automatización con Docker Compose y Makefile.
 
 ---

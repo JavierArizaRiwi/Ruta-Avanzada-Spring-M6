@@ -1,5 +1,7 @@
 # Monitorización de una app Spring Boot (H2) con Prometheus y Grafana usando Docker
 
+> **Estado curricular:** introducción para `SESIONES/Semana11`. H2 es demostrativo; el laboratorio profesional usa PostgreSQL y la infraestructura local documentada en complementos.
+
 Este instructivo explica paso a paso cómo configurar y monitorear una aplicación Spring Boot utilizando H2 como base de datos, Prometheus para la recolección de métricas y Grafana para la visualización. Este tutorial está diseñado para principiantes, por lo que no se asume ningún conocimiento previo.
 
 ---
@@ -90,7 +92,7 @@ spring:
     password:
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create-drop # solo demostración H2
     database-platform: org.hibernate.dialect.H2Dialect
 
 management:

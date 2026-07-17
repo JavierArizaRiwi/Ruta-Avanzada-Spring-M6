@@ -1,327 +1,369 @@
-# Día 3 - Arquitectura Hexagonal (Ports & Adapters) con Spring Boot, JUnit y Mockito
+# Día 3 — Validación, Problem Details RFC 9457 y OpenAPI
 
-En esta sesión aprenderás a diseñar aplicaciones **altamente desacopladas** siguiendo el enfoque de **Arquitectura Hexagonal (Ports & Adapters)**.  
-Este modelo fue introducido por *Alistair Cockburn* y es la base de muchas implementaciones modernas de **Clean Architecture** y **Domain-Driven Design (DDD)**.
+> **Estado curricular:** cierre de API en Semana 2. Incluye validación, RFC 9457, documentación OpenAPI y pruebas del contrato.
 
----
+## Entregable adicional: OpenAPI
 
-## Contexto educativo
+Documenta operaciones, estados, DTO y Problem Details mediante springdoc-openapi compatible con Spring Boot 4. La documentación no reemplaza las pruebas: añade `@WebMvcTest` para 201, 400, 404 y 409 y verifica `application/problem+json`.
 
-Este día marca la **transición natural** desde la **arquitectura por capas clásica** (que tus coders ya dominan) hacia un modelo **más limpio, modular y mantenible**.  
-El objetivo es entender que lo aprendido sobre *services*, *repositories* y *controllers* sigue siendo válido, pero ahora se organiza bajo principios de **independencia del dominio**, **inversión de dependencias** y **testabilidad aislada**.
+Endpoints esperados:
 
----
-
-## 1) ¿Qué es la Arquitectura Hexagonal?
-
-La arquitectura hexagonal busca **separar el núcleo del sistema (el dominio y sus reglas)** de todo lo externo: bases de datos, APIs, interfaces gráficas, etc.  
-Su nombre proviene de la representación visual de un **hexágono**, donde cada lado simboliza un tipo de interfaz o conector externo.
-
-```
-               +-----------------------------+
-               |      Adaptador de Entrada   |  → REST, CLI, Mensajería
-               +-----------------------------+
-                         ↓          ↑
-+----------------------------------------------------------+
-|                     Dominio / Aplicación                 |
-|  ┌────────────────────────────────────────────────────┐  |
-|  |   Puerto de Entrada (Input Port)  →  Casos de Uso   |  |
-|  |   Puerto de Salida (Output Port)  ←  Adaptadores    |  |
-|  └────────────────────────────────────────────────────┘  |
-+----------------------------------------------------------+
-                         ↑          ↓
-               +-----------------------------+
-               |     Adaptador de Salida     |  → BD, APIs externas
-               +-----------------------------+
+```text
+/v3/api-docs
+/swagger-ui/index.html
 ```
 
-El dominio queda **aislado del framework y la infraestructura**, lo que permite **probarlo y reemplazar dependencias fácilmente**.
+Al finalizar la semana deben existir una colección `.http` y un contrato OpenAPI reproducible.
+
+En esta sesión aprenderás a construir un **sistema robusto de validaciones y manejo de errores** en APIs REST usando **Spring Boot**, bajo principios de **arquitectura limpia/hexagonal**.
+El objetivo es que tus adaptadores de entrada (controladores) sean **limpios**, sin lógica de validación o control de errores repetida, y que el **dominio** permanezca independiente del framework.
+
+> Nota: en semanas siguientes, estos endpoints se expondrán **a través del API Gateway**; el formato unificado de errores ayuda a clientes y observabilidad.
 
 ---
 
-## 2) ¿Por qué se llaman “Gateways” o “Puertos”?
+## 1) Objetivos del día
 
-El término *gateway* o *port* hace referencia a un **punto de comunicación controlado** entre el dominio y el mundo exterior.  
-- Un **Input Port (Puerto de entrada)** define **qué operaciones ofrece el dominio** (casos de uso).  
-- Un **Output Port (Puerto de salida)** define **qué necesita el dominio del exterior** (por ejemplo, guardar datos o enviar notificaciones).
-
-**Analogía:**  
-El dominio es una fortaleza, y los *ports* son las puertas por donde entran o salen las solicitudes.  
-Los *adapters* son los soldados o mensajeros que transforman los mensajes entre el mundo externo y el interno.
+- Implementar **validaciones personalizadas** con `jakarta.validation`.
+- Centralizar el manejo de errores mediante `@ControllerAdvice` / `@RestControllerAdvice`.
+- Definir una **estructura uniforme** de respuesta de error.
+- Diferenciar entre errores de **dominio**, **infraestructura** y **validación**.
+- Mantener el **desacoplamiento** entre dominio y framework (hexagonal).
 
 ---
 
-## 3) Estructura recomendada de proyecto
+## 2) Por qué manejar errores de forma uniforme
+
+En proyectos empresariales es vital que todas las respuestas de error tengan un formato predecible y homogéneo, por ejemplo:
+
+```json
+{
+  "timestamp": "2025-10-20T14:30:00Z",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "El campo 'nombre' es obligatorio",
+  "path": "/api/v1/estudiantes",
+  "fields": { "nombre": "El nombre no puede estar vacío" }
+}
+```
+
+Esto facilita:
+- Integración con frontends y sistemas externos.
+- Depuración centralizada y logging.
+- Mantenibilidad, consistencia y pruebas automatizadas (contratos).
+
+---
+
+## 3) Estructura de proyecto (hexagonal)
 
 ```
 com.riwi.academico
  ├─ domain/
- │   ├─ model/                # Entidades y reglas de negocio
- │   ├─ ports/                # Interfaces (gateways / puertos)
- │   └─ service/              # Servicios del dominio (casos de uso)
+ │   ├─ model/
+ │   ├─ exception/            # Excepciones de dominio (p.ej., NegocioException)
+ │   ├─ ports/
+ │   └─ service/
  ├─ infrastructure/
  │   ├─ adapters/
- │   │   ├─ in/               # Adaptadores de entrada (REST, CLI, etc.)
- │   │   └─ out/              # Adaptadores de salida (DB, Kafka, etc.)
- │   └─ config/               # Configuración de beans
- └─ application/
-     └─ AcademicoApplication.java
+ │   │   ├─ in/rest/          # Controladores REST (sin lógica de validación de negocio)
+ │   │   └─ out/jpa/          # Persistencia (implementaciones de puertos)
+ │   └─ exception/            # Manejador global + excepciones técnicas
+ ├─ dto/                      # DTOs request/response + ErrorResponse
+ ├─ application/              # (opcional) orquestación
+ └─ AcademicoApplication.java
 ```
 
 ---
 
-## 4) Ejemplo práctico con Estudiantes
+## 4) Validaciones con `jakarta.validation`
 
-### 4.1 Dominio
+Spring Boot integra automáticamente **Bean Validation**.
+Anota tus **DTOs** y usa `@Valid` (cuerpo) y `@Validated` (params/path).
+
+### 4.1 DTO con validaciones
 ```java
-// domain/model/Estudiante.java
-package com.riwi.academico.domain.model;
+// dto/EstudianteRequest.java
+package com.riwi.academico.dto;
 
-public class Estudiante {
-    private final String id;
-    private String nombre;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
-    public Estudiante(String id, String nombre) {
-        if (id == null || id.isBlank()) throw new IllegalArgumentException("id requerido");
-        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("nombre requerido");
-        this.id = id;
-        this.nombre = nombre;
-    }
+public class EstudianteRequest {
+  @NotBlank(message = "El nombre no puede estar vacío")
+  @Size(min = 3, max = 50, message = "El nombre debe tener entre 3 y 50 caracteres")
+  private String nombre;
 
-    public String getId() { return id; }
-    public String getNombre() { return nombre; }
-    public void renombrar(String nuevoNombre) {
-        if (nuevoNombre == null || nuevoNombre.isBlank())
-            throw new IllegalArgumentException("nombre requerido");
-        this.nombre = nuevoNombre;
-    }
+  public String getNombre() { return nombre; }
+  public void setNombre(String nombre) { this.nombre = nombre; }
 }
 ```
 
-### 4.2 Puerto de salida (Gateway)
+### 4.2 Controlador con validación automática
 ```java
-// domain/ports/EstudianteRepositoryPort.java
-package com.riwi.academico.domain.ports;
-
-import com.riwi.academico.domain.model.Estudiante;
-import java.util.Optional;
-import java.util.List;
-
-public interface EstudianteRepositoryPort {
-    Estudiante guardar(Estudiante e);
-    Optional<Estudiante> buscarPorId(String id);
-    List<Estudiante> listar();
+// infrastructure/adapters/in/rest/EstudianteController.java (fragmento)
+@PostMapping
+public ResponseEntity<EstudianteResponse> crear(@Valid @RequestBody EstudianteRequest request) {
+  var e = service.ejecutar(request.getNombre());           // caso de uso en dominio
+  return ResponseEntity.status(HttpStatus.CREATED)
+      .body(new EstudianteResponse(e.getId(), e.getNombre()));
 }
 ```
 
-### 4.3 Puerto de entrada (Caso de uso)
+Si la validación falla, Spring lanza `MethodArgumentNotValidException` (cuerpo).
+Para **params/path**, anota la clase con `@Validated` y usa restricciones como `@Min`, `@Max`, etc.
+
+---
+
+## 5) Contrato de error: `ProblemDetail` RFC 9457
+
+La implementación obligatoria usa el soporte nativo de Spring. El DTO `ErrorResponse` mostrado después se conserva únicamente para comparar un contrato propietario; no debe coexistir con `ProblemDetail` en la misma API.
+
 ```java
-// domain/service/RegistrarEstudianteService.java
-package com.riwi.academico.domain.service;
+@RestControllerAdvice
+class ApiExceptionHandler {
 
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.ports.EstudianteRepositoryPort;
-import java.util.List;
-
-public class RegistrarEstudianteService {
-    private final EstudianteRepositoryPort repo;
-
-    public RegistrarEstudianteService(EstudianteRepositoryPort repo) {
-        this.repo = repo;
-    }
-
-    public Estudiante registrar(String id, String nombre) {
-        return repo.guardar(new Estudiante(id, nombre));
-    }
-
-    public List<Estudiante> listar() { return repo.listar(); }
+  @ExceptionHandler(NegocioException.class)
+  ProblemDetail business(NegocioException exception, HttpServletRequest request) {
+    var problem = ProblemDetail.forStatus(HttpStatus.UNPROCESSABLE_ENTITY);
+    problem.setType(URI.create("https://errors.riwi.io/business-rule"));
+    problem.setTitle("No se puede procesar la operación");
+    problem.setDetail(exception.getMessage());
+    problem.setInstance(URI.create(request.getRequestURI()));
+    problem.setProperty("code", "BUSINESS_RULE_VIOLATION");
+    return problem;
+  }
 }
 ```
 
-### 4.4 Adaptador de salida (Infraestructura)
+Para validación añade una propiedad `errors` con campo y mensaje, sin devolver valores sensibles. El media type esperado es `application/problem+json`.
+
+### Comparación: contrato propietario anterior
+
 ```java
-// infrastructure/adapters/out/EstudianteJpaAdapter.java
-package com.riwi.academico.infrastructure.adapters.out;
+// dto/ErrorResponse.java
+package com.riwi.academico.dto;
 
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.ports.EstudianteRepositoryPort;
-import com.riwi.academico.infrastructure.jpa.entity.EstudianteEntity;
-import com.riwi.academico.infrastructure.jpa.repository.EstudianteJpaRepository;
-import com.riwi.academico.infrastructure.mapper.EstudianteMapper;
-import org.springframework.stereotype.Repository;
+import java.time.Instant;
+import java.util.Map;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
+public class ErrorResponse {
+  private String timestamp;
+  private int status;
+  private String error;
+  private String message;
+  private String path;
+  private Map<String, String> fields; // opcional para errores de validación de campos
 
-@Repository
-public class EstudianteJpaAdapter implements EstudianteRepositoryPort {
-
-    private final EstudianteJpaRepository repo;
-
-    public EstudianteJpaAdapter(EstudianteJpaRepository repo){ this.repo = repo; }
-
-    @Override
-    public Estudiante guardar(Estudiante e) {
-        return EstudianteMapper.toDomain(repo.save(EstudianteMapper.toEntity(e)));
-    }
-
-    @Override
-    public Optional<Estudiante> buscarPorId(String id) {
-        return repo.findById(id).map(EstudianteMapper::toDomain);
-    }
-
-    @Override
-    public List<Estudiante> listar() {
-        return repo.findAll().stream().map(EstudianteMapper::toDomain).collect(Collectors.toList());
-    }
+  public ErrorResponse() {}
+  public ErrorResponse(int status, String error, String message, String path, Map<String,String> fields) {
+    this.timestamp = Instant.now().toString();
+    this.status = status;
+    this.error = error;
+    this.message = message;
+    this.path = path;
+    this.fields = fields;
+  }
+  public String getTimestamp() { return timestamp; }
+  public int getStatus() { return status; }
+  public String getError() { return error; }
+  public String getMessage() { return message; }
+  public String getPath() { return path; }
+  public Map<String, String> getFields() { return fields; }
 }
 ```
 
-### 4.5 Adaptador de entrada (REST Controller)
-```java
-// infrastructure/adapters/in/EstudianteController.java
-package com.riwi.academico.infrastructure.adapters.in;
+---
 
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.service.RegistrarEstudianteService;
-import org.springframework.http.ResponseEntity;
+## 6) Manejador global de errores (`@RestControllerAdvice`)
+
+```java
+// infrastructure/exception/GlobalExceptionHandler.java
+package com.riwi.academico.infrastructure.exception;
+
+import com.riwi.academico.dto.ErrorResponse;
+import com.riwi.academico.domain.exception.NegocioException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.*;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
-@RestController
-@RequestMapping("/api/estudiantes")
-public class EstudianteController {
-    private final RegistrarEstudianteService service;
+@RestControllerAdvice
+public class GlobalExceptionHandler {
 
-    public EstudianteController(RegistrarEstudianteService service) { this.service = service; }
+  @ExceptionHandler(MethodArgumentNotValidException.class) // body inválido
+  public ResponseEntity<ErrorResponse> handleBodyValidation(MethodArgumentNotValidException ex, HttpServletRequest req) {
+    Map<String, String> fields = ex.getBindingResult().getFieldErrors().stream()
+        .collect(Collectors.toMap(
+            fe -> fe.getField(),
+            fe -> fe.getDefaultMessage(),
+            (a,b) -> a,
+            LinkedHashMap::new
+        ));
+    var body = new ErrorResponse(400, "Bad Request", "Validación fallida", req.getRequestURI(), fields);
+    return ResponseEntity.badRequest().body(body);
+  }
 
-    @PostMapping
-    public ResponseEntity<Estudiante> crear(@RequestParam String id, @RequestParam String nombre){
-        return ResponseEntity.ok(service.registrar(id, nombre));
-    }
+  @ExceptionHandler(ConstraintViolationException.class) // params/path inválidos
+  public ResponseEntity<ErrorResponse> handleParamValidation(ConstraintViolationException ex, HttpServletRequest req) {
+    Map<String, String> fields = ex.getConstraintViolations().stream()
+        .collect(Collectors.toMap(
+            v -> v.getPropertyPath().toString(),
+            v -> v.getMessage(),
+            (a,b) -> a,
+            LinkedHashMap::new
+        ));
+    var body = new ErrorResponse(400, "Bad Request", "Parámetros inválidos", req.getRequestURI(), fields);
+    return ResponseEntity.badRequest().body(body);
+  }
 
-    @GetMapping
-    public ResponseEntity<List<Estudiante>> listar(){
-        return ResponseEntity.ok(service.listar());
-    }
+  @ExceptionHandler(NegocioException.class) // dominio
+  public ResponseEntity<ErrorResponse> handleBusiness(NegocioException ex, HttpServletRequest req) {
+    var body = new ErrorResponse(422, "Unprocessable Entity", ex.getMessage(), req.getRequestURI(), null);
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class) // conflictos de reglas
+  public ResponseEntity<ErrorResponse> handleConflict(IllegalArgumentException ex, HttpServletRequest req) {
+    var body = new ErrorResponse(409, "Conflict", ex.getMessage(), req.getRequestURI(), null);
+    return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+  }
+
+  @ExceptionHandler(java.util.NoSuchElementException.class) // recurso inexistente
+  public ResponseEntity<ErrorResponse> handleNotFound(java.util.NoSuchElementException ex, HttpServletRequest req) {
+    var body = new ErrorResponse(404, "Not Found", ex.getMessage(), req.getRequestURI(), null);
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+  }
+
+  @ExceptionHandler(Exception.class) // fallback
+  public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {
+    var body = new ErrorResponse(500, "Internal Server Error", "Ocurrió un error inesperado", req.getRequestURI(), null);
+    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+  }
 }
 ```
 
 ---
 
-## 5) Wiring con Spring (JavaConfig)
+## 7) Excepciones personalizadas del dominio
 
 ```java
-// infrastructure/config/BeanConfig.java
-package com.riwi.academico.infrastructure.config;
+// domain/exception/NegocioException.java
+package com.riwi.academico.domain.exception;
 
-import com.riwi.academico.domain.ports.EstudianteRepositoryPort;
-import com.riwi.academico.domain.service.RegistrarEstudianteService;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-
-@Configuration
-public class BeanConfig {
-
-    @Bean
-    public RegistrarEstudianteService registrarEstudianteService(EstudianteRepositoryPort repo) {
-        return new RegistrarEstudianteService(repo);
-    }
+public class NegocioException extends RuntimeException {
+  public NegocioException(String message) { super(message); }
 }
+```
+
+Puedes añadir otras (p.ej., `DuplicadoException`, `ReglaDominioException`) manteniendo el **dominio** libre de dependencias de Spring.
+
+---
+
+## 8) Validaciones personalizadas (`@Constraint`)
+
+A veces se requieren reglas propias, por ejemplo validar que un nombre **no contenga números**.
+
+### 8.1 Anotación
+```java
+// infrastructure/validation/NoNumeros.java
+package com.riwi.academico.infrastructure.validation;
+
+import jakarta.validation.Constraint;
+import jakarta.validation.Payload;
+import java.lang.annotation.*;
+
+@Documented
+@Constraint(validatedBy = NoNumerosValidator.class)
+@Target({ElementType.FIELD})
+@Retention(RetentionPolicy.RUNTIME)
+public @interface NoNumeros {
+  String message() default "El texto no debe contener números";
+  Class<?>[] groups() default {};
+  Class<? extends Payload>[] payload() default {};
+}
+```
+
+### 8.2 Validador
+```java
+// infrastructure/validation/NoNumerosValidator.java
+package com.riwi.academico.infrastructure.validation;
+
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
+
+public class NoNumerosValidator implements ConstraintValidator<NoNumeros, String> {
+  @Override
+  public boolean isValid(String value, ConstraintValidatorContext context) {
+    return value != null && value.matches("^[^0-9]*$");
+  }
+}
+```
+
+### 8.3 Uso en DTO
+```java
+// dto/EstudianteRequest.java (fragmento)
+@NoNumeros
+private String nombre;
 ```
 
 ---
 
-## 6) Beneficios concretos del enfoque Hexagonal
-
-| Beneficio | Explicación |
-|------------|-------------|
-| **Desacoplamiento** | El dominio no depende de frameworks ni bases de datos. |
-| **Sustituibilidad** | Cambiar JPA por Mongo o REST sin tocar el dominio. |
-| **Testabilidad** | Se pueden crear mocks de los puertos fácilmente. |
-| **Extensibilidad** | Nuevos adaptadores sin modificar el núcleo. |
-| **Claridad** | Separa lo esencial (reglas) de lo accesorio (infraestructura). |
-
----
-
-## 7) Testing de dominio con JUnit y Mockito
+## 9) Testing del manejo de errores con MockMvc
 
 ```java
-// domain/service/RegistrarEstudianteServiceTest.java
-package com.riwi.academico.domain.service;
+// src/test/java/com/riwi/academico/infrastructure/adapters/in/rest/EstudianteControllerValidationTest.java
+@WebMvcTest(EstudianteController.class)
+class EstudianteControllerValidationTest {
 
-import com.riwi.academico.domain.model.Estudiante;
-import com.riwi.academico.domain.ports.EstudianteRepositoryPort;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
+  @Autowired private MockMvc mvc;
+  @MockitoBean private RegistrarEstudianteService service;
 
-class RegistrarEstudianteServiceTest {
-
-    @Test
-    void debeRegistrarEstudianteCorrectamente() {
-        EstudianteRepositoryPort mockRepo = Mockito.mock(EstudianteRepositoryPort.class);
-        Mockito.when(mockRepo.guardar(Mockito.any())).thenAnswer(i -> i.getArguments()[0]);
-
-        RegistrarEstudianteService service = new RegistrarEstudianteService(mockRepo);
-        Estudiante e = service.registrar("1", "Ana");
-
-        assertEquals("Ana", e.getNombre());
-        Mockito.verify(mockRepo).guardar(Mockito.any());
-    }
-
-    @Test
-    void debeListarEstudiantes() {
-        EstudianteRepositoryPort mockRepo = Mockito.mock(EstudianteRepositoryPort.class);
-        Mockito.when(mockRepo.listar()).thenReturn(List.of(new Estudiante("1", "Carlos")));
-
-        RegistrarEstudianteService service = new RegistrarEstudianteService(mockRepo);
-        assertEquals(1, service.listar().size());
-    }
+  @Test
+  void debeRetornarErrorDeValidacion() throws Exception {
+    mvc.perform(post("/api/v1/estudiantes")
+        .contentType(MediaType.APPLICATION_JSON)
+        .content("{"nombre":"12"}"))
+      .andExpect(status().isBadRequest())
+      .andExpect(jsonPath("$.fields.nombre").value("El texto no debe contener números"));
+  }
 }
 ```
 
 ---
 
-## 8) Comparativa con Arquitectura por Capas
+## 10) Buenas prácticas
 
-| Concepto | En arquitectura por capas | En arquitectura hexagonal |
-|-----------|----------------------------|-----------------------------|
-| Orquestación de reglas | `Service` (capa de aplicación) | **Caso de uso** (*Input Port*) |
-| Acceso a datos | `Repository` (Spring Data) | **Puerto de salida** + **Adaptador (JPA)** |
-| Exposición HTTP | `Controller` | **Adaptador de entrada (REST)** |
-| Modelo de negocio | Entidades JPA | **Modelo de dominio puro (sin dependencias)** |
-| Dependencias | Controller → Service → Repository | Adaptadores → Puertos → Dominio |
-| Sustituir BD/API | Difícil, rompe varias capas | Solo se cambia el adaptador |
-| Testabilidad | A menudo depende del contexto de Spring | Casos de uso aislados, fáciles de mockear |
-
-**Resumen:**  
-El *Service* clásico se convierte en un **caso de uso**; los *repositories* en **puertos**; y las **implementaciones concretas** (JPA, REST, Kafka, etc.) en **adaptadores**.  
-El dominio no conoce ni Spring, ni JPA, ni HTTP.
+| Práctica | Beneficio |
+|-----------|-----------|
+| DTOs validados (`@Valid`) | Evita lógica de validación en el dominio |
+| `@RestControllerAdvice` global | Código limpio y reutilizable |
+| Excepciones por capa | Depuración y responsabilidades claras |
+| Mensajes sin detalles internos | Seguridad del API |
+| Formato homogéneo de error | Mejor DX y pruebas automatizadas |
 
 ---
 
-## 9) Flujo visual de dependencias
+## 11) IntelliJ / Ejecución rápida
 
-```
-Arquitectura por Capas:        Arquitectura Hexagonal:
-
-Controller → Service → Repo    Adaptadores → Puertos → Dominio
-(Depende de infra)             (Independiente del framework)
-```
+1. **Dependencias:** `spring-boot-starter-validation`, `spring-boot-starter-web`, `spring-boot-starter-test`.
+2. **Annotation Processors:** habilitar en *Settings → Build → Compiler → Annotation Processors*.
+3. **Ejecutar pruebas:** `./mvnw -q -Dtest=*Validation* test` o desde el IDE.
+4. **Probar con curl:**
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/estudiantes      -H "Content-Type: application/json"      -d '{"nombre": ""}'
+   ```
 
 ---
 
-## 10) Conclusión
+## 12) Resultado esperado
 
-- La **Arquitectura Hexagonal** separa el dominio de la infraestructura.  
-- Los **puertos/gateways** definen los contratos del dominio.  
-- Los **adaptadores** conectan el mundo real con esos contratos.  
-- Con **Spring**, los beans se configuran para unir ambos mundos.  
-- Con **JUnit + Mockito**, se puede probar el dominio sin cargar el framework.
-
-**Resultado esperado:**  
-Aplicación Spring Boot estructurada bajo principios hexagonales, con puertos y adaptadores claros, dominio independiente y casos de uso testeables con mocks.
+- Validaciones automáticas en todos los endpoints.
+- Manejador global centralizado y extensible.
+- Respuestas RFC 9457 con `type`, `title`, `status`, `detail`, `instance`, `code` y errores de campo cuando corresponda.
+- Validaciones personalizadas funcionales.
+- Pruebas verificando el flujo de errores.

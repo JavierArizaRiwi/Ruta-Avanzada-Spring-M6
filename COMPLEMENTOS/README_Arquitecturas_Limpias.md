@@ -1,5 +1,7 @@
 # Guía Profesional: Arquitecturas Limpias, Hexagonales, Microservicios y DDD en Java con Spring
 
+> **Estado curricular:** referencia de `SESIONES/Semana5` y preparación de `Semana13`. Empieza con monolito modular; microservicios se justifican después.
+
 ## Introducción
 
 Las arquitecturas modernas en Java y Spring Boot permiten construir sistemas robustos, escalables y mantenibles. Esta guía cubre desde la evolución de las arquitecturas por capas y MVC, hasta Clean Architecture, Hexagonal, Microservicios y Domain-Driven Design (DDD), con teoría, diagramas, ejemplos y buenas prácticas.

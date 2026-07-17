@@ -1,5 +1,7 @@
 # Día 2 — Principios SOLID aplicados en Spring (con puente desde Java SE y POO)
 
+> **Estado curricular:** introducción en Semana 1 y aplicación profunda en Semana 5. SOLID no exige crear una interfaz por clase.
+
 > Objetivo: comprender **cada principio SOLID** y cómo aplicarlo en **Spring Framework** usando los pilares de la **Programación Orientada a Objetos (POO)**.  
 > Aprenderás a identificar malas prácticas comunes en Java SE y refactorizarlas usando la **Inversión de Dependencias, Abstracciones, Composición y Polimorfismo**, con ejemplos comentados, ventajas reales y comparaciones entre SOLID y POO.
 

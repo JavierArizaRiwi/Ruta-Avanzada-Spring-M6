@@ -1,6 +1,8 @@
 
 # Día 2 - Relaciones Avanzadas, Consultas Personalizadas y Transacciones con Spring Data JPA
 
+> **Estado curricular:** vigente dentro de Semana 3; se complementa con N+1, `EntityGraph`, locking optimista e índices medidos.
+
 En esta sesión aprenderás a manejar **relaciones entre entidades**, crear **consultas personalizadas** con **JPQL y SQL nativo**, y controlar **transacciones** en Spring Data JPA. Además, verás cómo optimizar el acceso a datos y comprenderás el ciclo de vida de las entidades.
 
 ---
@@ -254,4 +256,4 @@ List<Curso> listarConProfesor();
 - Consultas JPQL y nativas en repositorios.  
 - Transacciones controladas en servicios.  
 - Tests exitosos de persistencia.  
-- Código optimizado y libre de acoplamiento con el dominio.  
+- Código optimizado y libre de acoplamiento con el dominio.

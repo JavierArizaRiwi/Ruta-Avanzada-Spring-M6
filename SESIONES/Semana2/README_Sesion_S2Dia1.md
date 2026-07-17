@@ -1,5 +1,7 @@
 # Día 1 — Spring Boot: Autoconfiguración profunda, starters y perfiles (con ejemplos)
 
+> **Estado curricular:** parte básica de Spring Boot; crear un starter propio es profundización. Línea de referencia: Boot 4.1.x y Java 17/21.
+
 > En este material vamos **más allá de la teoría**: cada concepto trae **qué es**, **cómo funciona por dentro** y **un ejemplo mínimo** para que lo veas en acción. Todo preparado para integrarlo a tu ecosistema de **microservicios + Gateway** sin dependencias pagas.
 
 ---
@@ -182,7 +184,7 @@ logging:
 spring:
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
 logging:
   level:
     org.springframework.web: debug

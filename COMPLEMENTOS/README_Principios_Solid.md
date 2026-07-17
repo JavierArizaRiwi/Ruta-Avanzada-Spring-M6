@@ -1,6 +1,8 @@
 
 # Guía detallada — De POO en Java SE a Spring + Principios SOLID
 
+> **Estado curricular:** vigente como referencia de Semanas 1 y 5. SOLID se evalúa con reglas del caso conductor, no por cantidad de interfaces o patrones.
+
 > Objetivo: construir una **línea de transición** clara desde los principios de **Programación Orientada a Objetos (POO) en Java SE** hacia **Spring** y **SOLID**, con ejemplos prácticos, anti‑patrones comunes y ejercicios. Material pensado para coders que ya hicieron proyectos por capas/MVC en Java SE y ahora migran a **Spring Boot**.
 
 ---

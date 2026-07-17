@@ -1,5 +1,7 @@
 # Día 3 - Observabilidad Hexagonal con Actuator, Micrometer/Prometheus y Grafana **a través del API Gateway**
 
+> **Estado curricular:** introducción de Semana 7 que se profundiza en Semana 11. Prometheus debe identificar cada instancia, no ocultarlas detrás del Gateway.
+
 Cerramos la ruta montando **observabilidad completa** para nuestros microservicios siguiendo **arquitectura hexagonal** y consumiendo **todas las rutas vía API Gateway**. Tendrás **healthchecks**, **métricas de Prometheus** (Micrometer) y **dashboards Grafana**, sin costos, reproducible en local con Docker.
 
 > Nota de estilo: todos los ejemplos **exponen/consumen por Gateway**. Los servicios mantienen capas hexagonales (dominio/puertos/adaptadores).
@@ -207,7 +209,7 @@ Crea `observability/docker-compose.yml` y levanta **Prometheus** y **Grafana**.
 version: "3.8"
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.5.0
     container_name: riwi-prometheus
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -215,7 +217,7 @@ services:
       - "9090:9090"
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:12.1.0
     container_name: riwi-grafana
     ports:
       - "3000:3000"
@@ -259,7 +261,7 @@ docker compose up -d
 ```
 
 Prometheus UI: `http://localhost:9090`  
-Grafana UI: `http://localhost:3000` (admin/admin)
+Grafana UI: `http://localhost:3000`. Obtén usuario y contraseña desde variables locales; no reutilices credenciales de ejemplo.
 
 ---
 
